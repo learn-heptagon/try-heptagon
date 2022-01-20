@@ -1,0 +1,3 @@
+[submodule "heptagon"]
+	path = heptagon
+	url = git@gitlab.inria.fr:synchrone/heptagon.git
