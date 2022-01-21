@@ -1,4 +1,5 @@
 open Js_of_ocaml
+open Js_of_ocaml_lwt
 open Ezjs_ace
 
 open Compiler_utils
@@ -7,29 +8,20 @@ open Compiler_options
 (* [modname] is the module name, [source_f] is the source file *)
 let compile_program modname source =
 
-  print_endline "compile ?";
-
-  (* input/output channels *)
   let lexbuf = Lexing.from_string source in
 
-  print_endline "lexing";
-
   let log_c = stdout in
-
 
   try
     (* Activates passes according to the backend used *)
     Mls2seq.load_conf ();
-    print_endline "conf";
     (* Process the [lexbuf] to an Heptagon AST *)
     let p = Hept_parser_scoper.parse_program modname lexbuf log_c in
-    print_endline "parsing";
     (* Process the Heptagon AST *)
     let p = Hept_compiler.compile_program p log_c in
     (* Compile Heptagon to MiniLS *)
     let p = do_pass "Translation into MiniLS"
         Hept2mls.program p (Mls_compiler.pp log_c) in
-    print_endline "OK";
     (* (\* Output the .mls *\) *)
     (*   do_silent_pass "MiniLS serialization" (fun () -> Mls_printer.print mls_c p) (); *)
     (* Process the MiniLS AST *)
@@ -40,8 +32,21 @@ let compile_program modname source =
     (* close_out log_c; *)
   with e -> raise e (* close_out log_c; raise e *)
 
+let reinit_genv () =
+  Modules.(
+    g_env.current_mod <- Module "";
+    g_env.opened_mod <- [];
+    g_env.loaded_mod <- [];
+    g_env.values <- Names.QualEnv.empty;
+    g_env.types <- Names.QualEnv.empty;
+    g_env.constrs <- Names.QualEnv.empty;
+    g_env.fields <- Names.QualEnv.empty;
+    g_env.consts <- Names.QualEnv.empty
+  )
 
 let compile source =
+  reinit_genv ();
+
   let modname = "tryheptc" in
   let modul = Names.modul_of_string modname in
   Initial.initialize modul;
@@ -60,7 +65,7 @@ let compile source =
 (*     editor text *)
 
 let print_error text =
-  Page.Console.error text
+  if text <> "\n" then Page.Console.error text
 
 (** Incremental parser to reparse the token stream and generate an
     error message (the verified and extracted parser does not
@@ -83,7 +88,7 @@ let compile_and_exn editor ?(in_console=false) step =
 
   try
     compile (Ace.get_contents editor)
-  with e -> print_error (Printexc.to_string e)
+  with e -> () (* print_error (Printexc.to_string e) *)
 
   (* (try *)
   (*    (lex_and_parse_program editor ~in_console () *)
@@ -126,11 +131,27 @@ let compile_and_output editor panel =
   compile_and_exn editor ~in_console:true Page.(panel.ptype);
   Ace.set_contents panel.editor (read_file "out")
 
+let (let*) = Lwt.bind
+let (and*) = Lwt.both
+
+let download_pervasives () =
+  let* f = XmlHttpRequest.perform_raw ~response_type:ArrayBuffer "./pervasives.epci" in
+  let s = Typed_array.String.of_arrayBuffer
+      (Js.Opt.get f.content
+         (fun _ -> failwith "Couldn't download pervasives.epci")) in
+
+  let pervasives = open_out_bin "pervasives.epci" in
+  output_string pervasives s;
+  close_out pervasives;
+  Lwt.return ()
+
 let _ =
+  (* Direct error channel *)
+  Sys_js.set_channel_flusher stderr (fun e -> print_error e);
+
+  let* _ = download_pervasives () in
+
   (* add_target_language "obc"; *)
-  (* Js_of_ocaml.Sys_js.mount ~path:"pervasives.epci" (fun ~prefix ~path -> None); *)
-  Js_of_ocaml.Sys_js.create_file ~name:"pervasives.epci" ~content:"";
-  (* Comment charger le fichier pervasives.epci ? *)
 
   let editor_panel = Page.(create_panel Source
       [("+Mls", Button (fun () -> ignore (create_panel Lustre [])));
@@ -145,4 +166,5 @@ let _ =
       Page.save_program (Ace.get_contents editor_panel.editor);
       try compile_and_exn editor_panel.editor Page.Source
       with _ -> ());
-  Ace.set_contents editor_panel.editor (Page.get_saved_program ())
+  Ace.set_contents editor_panel.editor (Page.get_saved_program ());
+  Lwt.return ()
