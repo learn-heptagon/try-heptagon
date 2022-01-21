@@ -56,25 +56,13 @@ end
 
 type panel_type =
   | Source
-  | NoLast
-  | NoSwitch
-  | NoLocal
-  | Lustre
-  | NLustre
-  | Stc
+  | MiniLS
   | Obc
-  | Clight
 
 let label_of_panel = function
   | Source -> "Source"
-  | NoLast -> "No Last"
-  | NoSwitch -> "No Switch"
-  | NoLocal -> "No Locals"
-  | Lustre -> "Lustre"
-  | NLustre -> "NLustre"
-  | Stc -> "Stc"
+  | MiniLS -> "MiniLS"
   | Obc -> "Obc"
-  | Clight -> "Clight"
 
 type control =
   | Button of (unit -> unit)

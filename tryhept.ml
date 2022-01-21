@@ -5,12 +5,29 @@ open Ezjs_ace
 open Compiler_utils
 open Compiler_options
 
+let read_file filename =
+  let lines = ref [] in
+  let chan = open_in filename in
+  try
+    while true; do
+      lines := input_line chan :: !lines
+    done; !lines
+  with End_of_file ->
+    close_in chan;
+    List.rev !lines
+
 (* [modname] is the module name, [source_f] is the source file *)
 let compile_program modname source =
 
   let lexbuf = Lexing.from_string source in
 
+  let minils_c = open_out (modname^".mls") in
   let log_c = stdout in
+
+  let close_all () =
+    close_out minils_c
+
+  in
 
   try
     (* Activates passes according to the backend used *)
@@ -20,17 +37,16 @@ let compile_program modname source =
     (* Process the Heptagon AST *)
     let p = Hept_compiler.compile_program p log_c in
     (* Compile Heptagon to MiniLS *)
-    let p = do_pass "Translation into MiniLS"
-        Hept2mls.program p (Mls_compiler.pp log_c) in
-    (* (\* Output the .mls *\) *)
-    (*   do_silent_pass "MiniLS serialization" (fun () -> Mls_printer.print mls_c p) (); *)
+    let p = Hept2mls.program p in
+    (* Output the .mls *)
+    Mls_printer.print minils_c p;
     (* Process the MiniLS AST *)
     let p = Mls_compiler.compile_program p log_c in
     (* Generate the sequential code *)
     Mls2seq.program p log_c;
 
-    (* close_out log_c; *)
-  with e -> raise e (* close_out log_c; raise e *)
+    close_all ()
+  with e -> close_all (); raise e
 
 let reinit_genv () =
   Modules.(
@@ -47,7 +63,7 @@ let reinit_genv () =
 let compile source =
   reinit_genv ();
 
-  let modname = "tryheptc" in
+  let modname = "tryhept" in
   let modul = Names.modul_of_string modname in
   Initial.initialize modul;
   compile_program modname source
@@ -129,7 +145,13 @@ let compile_and_output editor panel =
   (*   ); *)
 
   compile_and_exn editor ~in_console:true Page.(panel.ptype);
-  Ace.set_contents panel.editor (read_file "out")
+
+  match panel.ptype with
+  | Source -> ()
+  | MiniLS ->
+    Ace.set_contents panel.editor (read_file "tryhept.mls")
+  | Obc ->
+    Ace.set_contents panel.editor (read_file "tryhept.obc")
 
 let (let*) = Lwt.bind
 let (and*) = Lwt.both
@@ -154,8 +176,8 @@ let _ =
   (* add_target_language "obc"; *)
 
   let editor_panel = Page.(create_panel Source
-      [("+Mls", Button (fun () -> ignore (create_panel Lustre [])));
-       ("+Obc", Button (fun () -> ignore (create_panel Clight [])))
+      [("+MiniLS", Button (fun () -> ignore (create_panel MiniLS [])));
+       ("+Obc", Button (fun () -> ignore (create_panel Obc [])))
       ])
   in
   Page.add_panel_control editor_panel ("Compile", Page.Button (fun () ->
