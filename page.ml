@@ -43,6 +43,12 @@ module Console = struct
     let newLine = of_node (T.(li ~a:[a_class ["console-error"]] [txt msg])) in
     ignore (console##appendChild newLine);
     scroll (Js.Unsafe.coerce newLine)
+
+  (** Delete all lines on the console *)
+  let clear () =
+    while Js.to_bool console##hasChildNodes do
+      Js.Opt.iter (console##.firstChild) (fun c -> Dom.removeChild console c)
+    done
 end
 
 (** Generation of fresh variables *)
