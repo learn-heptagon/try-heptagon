@@ -158,14 +158,9 @@ let (let*) = Lwt.bind
 let (and*) = Lwt.both
 
 let download_pervasives () =
-  let* f = XmlHttpRequest.perform_raw ~response_type:ArrayBuffer "./pervasives.epci" in
-  let s = Typed_array.String.of_arrayBuffer
-      (Js.Opt.get f.content
-         (fun _ -> failwith "Couldn't download pervasives.epci")) in
-
-  let pervasives = open_out_bin "pervasives.epci" in
-  output_string pervasives s;
-  close_out pervasives;
+  let outf = open_out_bin "pervasives.epci" in
+  List.iter (output_byte outf) Pervasives.pervasives;
+  close_out outf;
   Lwt.return ()
 
 let _ =

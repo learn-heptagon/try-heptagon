@@ -10,7 +10,8 @@ FLAGS=-use-ocamlfind -Is heptagon/compiler/ \
 
 SRC := \
 	page.ml \
-	tryhept.ml
+	tryhept.ml \
+	pervasives.ml
 
 all: tryhept.js pervasives.epci
 
@@ -25,6 +26,9 @@ tryhept.js: tryhept.byte
 pervasives.epci: heptagon/lib/pervasives.epi
 	cd heptagon/lib && make
 	cp heptagon/lib/pervasives.epci .
+
+pervasives.ml: pervasives.epci embed_epci.ml
+	ocaml embed_epci.ml $^ > $@
 
 clean:
 	rm -rf _build/ *.byte tryhept.js pervasives.epci
