@@ -166,22 +166,21 @@ let download_pervasives () =
 let _ =
   let* _ = download_pervasives () in
 
-  let editor_panel = Page.(create_panel Source
-      [("+MiniLS", Button (fun () -> ignore (create_panel MiniLS [])));
-       ("+Obc", Button (fun () -> ignore (create_panel Obc [])))
-      ])
-  in
+  let editor_panel = Page.(create_panel Source []) in
 
   (* Direct error channel *)
   Sys_js.set_channel_flusher stderr (fun e -> print_error editor_panel.editor e);
 
-  Page.add_panel_control editor_panel ("Compile", Page.Button (fun () ->
-      try List.iter (fun p -> compile_and_output editor_panel.editor p) !Page.output_panels
-      with _ -> ()
-    ));
+  (* Compilation function *)
+  let compile () =
+    try List.iter (fun p -> compile_and_output editor_panel.editor p) !Page.output_panels
+    with _ -> ()
+  in
+
+  Page.add_panel_control editor_panel ("+MiniLS", Button (fun () -> ignore Page.(create_panel MiniLS []); compile ()));
+  Page.add_panel_control editor_panel ("+Obc", Button (fun () -> ignore Page.(create_panel Obc []); compile ()));
   editor_panel.editor.editor##on (Js.string "change") (fun () ->
       Page.save_program (Ace.get_contents editor_panel.editor);
-      try compile_and_exn editor_panel.editor Page.Source
-      with _ -> ());
+      compile ());
   Ace.set_contents editor_panel.editor (Page.get_saved_program ());
   Lwt.return ()
