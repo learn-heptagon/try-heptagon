@@ -23,6 +23,12 @@ let save_program prog =
     (fun stor ->
        stor##setItem (Js.string "saved_program") (Js.string prog))
 
+(** Remove all children of a div *)
+let clear_div divid =
+  let div = by_id divid in
+  let children = Dom.list_of_nodeList div##.childNodes in
+  List.iter (fun n -> Dom.removeChild div n) children
+
 (** Manipulate the console *)
 module Console = struct
   (** access to the console *)
@@ -60,15 +66,27 @@ end
 
 (* Resizable panels *)
 
+type interp_type =
+  | Table
+  | Graph
+  | Audio
+
 type panel_type =
   | Source
   | MiniLS
   | Obc
+  | Interpreter of interp_type
+
+let label_of_interp_type = function
+  | Table -> "Table"
+  | Graph -> "Graph"
+  | Audio -> "Audio"
 
 let label_of_panel = function
   | Source -> "Source"
   | MiniLS -> "MiniLS"
   | Obc -> "Obc"
+  | Interpreter typ -> Printf.sprintf "Interpreter"
 
 type control =
   | Button of (unit -> unit)
@@ -76,12 +94,19 @@ type control =
 
 open Ezjs_ace
 
-type panel = {
+type ace_panel = {
   ptype: panel_type;
-  id: string;
   controls: (string * control) list;
   editor: unit Ace.editor
 }
+
+type panel =
+  | AcePanel of string * ace_panel
+  | InterpPanel of string
+
+let panel_id = function
+  | AcePanel (id, _) -> id
+  | InterpPanel id -> id
 
 let output_panels : panel list ref = ref []
 
@@ -110,9 +135,106 @@ let rec get_checkbox_value id controls =
   | _ -> raise Not_found
 
 let remove_panel id =
-  Option.iter (fun p -> Ace.remove p.editor) (List.find_opt (fun p -> p.id = id) !output_panels);
-  output_panels := List.filter (fun p -> p.id <> id) !output_panels;
+  Option.iter (function
+      | AcePanel (_, p) -> Ace.remove p.editor
+      | _ -> ())
+    (List.find_opt (fun p -> panel_id p = id) !output_panels);
+  output_panels := List.filter (fun p -> panel_id p <> id) !output_panels;
   Dom.removeChild (by_id "body") (by_id id)
+
+(** Interpreter panel *)
+
+let interp_hist_id = "interpreter-hist"
+
+let column_head n = T.(th [txt (string_of_int n)])
+let input_cell isbool =
+  T.(td [if isbool then input ~a:[a_input_type `Checkbox] ()
+         else input ~a:[a_class ["history"]] ()]
+       ~a:[a_class ["history"]])
+let output_cell isbool = T.(td [] ~a:[a_class ["history"]])
+
+let rec create_hist_table divid ins outs reset_fun step_fun =
+  let div = by_id divid in
+  (try Dom.removeChild div (by_id interp_hist_id) with _ -> ());
+
+  let headid = Atom.fresh "head" in
+  let hhead = T.(tr ~a:[a_id headid] [th [txt ""]]) in
+
+  let make_first_column =
+    List.map (fun (s, isbool) ->
+      let rowid = Atom.fresh "row" in
+      rowid, isbool, T.(tr ~a:[a_id rowid] [th [txt s]]))
+  in
+
+  let hins = make_first_column ins and houts = make_first_column outs in
+
+  let tabl = T.(table ~a:[] (hhead::List.map (fun (_, _, x) -> x) (hins@houts))) in
+  let interp_div = of_node T.(div ~a:[a_id interp_hist_id] [tabl]) in
+  Dom.appendChild div interp_div;
+
+  (* Functional control of the table *)
+
+  (* Get the parts of the table *)
+  let head = by_id headid
+  and inprows = List.map (fun (id, isbool, _) -> by_id id, isbool) hins
+  and outrows = List.map (fun (id, isbool, _) -> by_id id, isbool) houts in
+
+  let get_row_input row : Dom_html.inputElement Js.t =
+    let opt_get o = Js.Opt.get o (fun _ -> failwith "get_row_input") in
+    opt_get (opt_get row##.lastChild)##.firstChild |> Js.Unsafe.coerce in
+
+  (* Get the input values. If they are not all available, raise *)
+  let get_latest_inputs () =
+    List.map (
+      fun (row, ischeckbox) ->
+        let input = get_row_input row in
+        if ischeckbox then if Js.to_bool input##.checked then "true" else "false"
+        else input##.value |> Js.to_string
+    ) inprows in
+
+  let disable_latest_inputs () =
+    List.iter (
+      fun (row, _) ->
+        let input = get_row_input row in
+        input##.disabled := Js.bool true
+    ) inprows in
+
+  let get_row_output row =
+    Js.Opt.get row##.lastChild (fun _ -> failwith "get_row_output") in
+
+  let set_latest_outputs output =
+    List.iter2 (
+      fun (row, ischeckbox) s ->
+        let cell = get_row_output row in
+        Dom.appendChild cell
+          (of_node T.(if ischeckbox
+                      then input ~a:([a_input_type `Checkbox; a_disabled ()]@(if s = "true" then [a_checked ()] else [])) ()
+                      else txt s))
+    ) outrows output in
+
+  (* Add a column to the table *)
+  let count = ref 1 in
+  let add_column () =
+    Dom.appendChild head (of_node (column_head !count));
+    List.iter (fun (row, isbool) -> Dom.appendChild row (of_node (input_cell isbool))) inprows;
+    List.iter (fun (row, isbool) -> Dom.appendChild row (of_node (output_cell isbool))) outrows;
+    count := !count + 1
+  in
+
+  add_column ();
+
+  let step_button = T.(button ~a:[
+      a_onclick (fun _ ->
+          (try
+             let inputs = get_latest_inputs () in
+             let outputs = step_fun inputs in
+             set_latest_outputs outputs;
+             disable_latest_inputs ();
+             add_column ()
+           with e -> Console.error (Printexc.to_string e));
+          true)]
+      [txt "step"]) in
+  Dom.appendChild interp_div (of_node step_button)
 
 let create_panel ptype controls =
   let body = by_id "body" in
@@ -129,22 +251,37 @@ let create_panel ptype controls =
     ((by_id controlsdivid)##appendChild (of_node T.(span ~a:[a_class ["panel-title"]]
                                                       [txt (label_of_panel ptype)])));
   List.iter (plug_control (by_id controlsdivid)) controls;
-  let editordiv = by_id editordivid in
-  let panel = {
-    ptype = ptype;
-    id = divid;
-    controls = controls;
-    editor = {
-      editor_div = editordiv;
-      editor = Ace.edit (by_id editordivid);
-      marks = [];
-      keybinding_menu = false; }
-  } in
-  if readOnly then panel.editor.editor##setReadOnly (Js.bool true);
-  Ace.set_mode panel.editor "ace/mode/lustre";
-  Ace.set_tab_size panel.editor 2;
+  let panel =
+    match ptype with
+    | Interpreter Table -> InterpPanel divid
+    | _ ->
+      let editordiv = by_id editordivid in
+      let panel = {
+          ptype = ptype;
+          controls = controls;
+          editor = {
+              editor_div = editordiv;
+              editor = Ace.edit (by_id editordivid);
+              marks = [];
+              keybinding_menu = false; }
+        } in
+      if readOnly then panel.editor.editor##setReadOnly (Js.bool true);
+      Ace.set_mode panel.editor "ace/mode/lustre";
+      Ace.set_tab_size panel.editor 2;
+      AcePanel (divid, panel)
+  in
   if readOnly then output_panels := panel::!output_panels;
   panel
 
 let add_panel_control panel control =
-  plug_control (by_id (panel.id^"-controls")) control
+  plug_control (by_id ((panel_id panel)^"-controls")) control
+
+let create_select divid (options : string list) default (onselect : string -> unit) =
+  let div = by_id divid in
+  let options = List.map (fun s -> T.(option ~a:[] (txt s))) options in
+  let select = of_node T.(select ~a:[] options) in
+  let select = Js.Unsafe.coerce select in
+  Dom.appendChild div select;
+  select##.onchange :=
+    (fun e -> onselect (Js.to_string select##.value); true);
+  select##.value := default; onselect default

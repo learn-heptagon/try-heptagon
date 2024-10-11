@@ -64,6 +64,14 @@ input, label {
     margin:2px;
 }
 
+input.history {
+    width:3em;
+}
+
+td.history {
+    text-align: center;
+}
+
 #fusion-label {
     line-height:35px;
 }

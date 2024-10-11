@@ -10,8 +10,9 @@ FLAGS=-use-ocamlfind -Is heptagon/compiler/ \
 
 SRC := \
 	page.ml \
+	simul.ml interp.ml \
 	tryhept.ml \
-	pervasives.ml
+	pervasives.ml \
 
 all: tryhept.js pervasives.epci
 

@@ -5,6 +5,8 @@ open Ezjs_ace
 open Compiler_utils
 open Compiler_options
 
+open Interp
+
 let read_file filename =
   let lines = ref [] in
   let chan = open_in filename in
@@ -41,7 +43,6 @@ let check_program p log_c =
 
 (* [modname] is the module name, [p] is the heptagon program *)
 let compile_program modname p =
-
   let minils_c = open_out (modname^".mls") in
   let log_c = stdout in
 
@@ -49,20 +50,19 @@ let compile_program modname p =
     close_out minils_c
   in
 
-  (try
-     (* Process the Heptagon AST *)
-     let p = Hept_compiler.compile_program p log_c in
-     (* Compile Heptagon to MiniLS *)
-     let p = Hept2mls.program p in
-     (* Output the .mls *)
-     Mls_printer.print minils_c p;
-     (* Process the MiniLS AST *)
-     let p = Mls_compiler.compile_program p log_c in
-     (* Generate the sequential code *)
-     Mls2seq.program p log_c;
-
-   with e -> ());
-  close_all ()
+  (* Process the Heptagon AST *)
+  let p = Hept_compiler.compile_program p log_c in
+  (* Compile Heptagon to MiniLS *)
+  let p = Hept2mls.program p in
+  (* Output the .mls *)
+  Mls_printer.print minils_c p;
+  (* Process the MiniLS AST *)
+  let p = Mls_compiler.compile_program p log_c in
+  (* Compile MiniLS *)
+  let p = Mls2obc.program p in
+  let p = Obc_compiler.compile_program log_c p in
+  Mls2seq.write_obc_file p;
+  close_all (); p
 
 let reset_genv () =
   Modules.(
@@ -141,18 +141,22 @@ let compile_and_exn editor step =
 let compile_and_output editor (panel: Page.panel) =
   reset_editor editor;
 
-  (try
-     let modname = prepare_module () in
-     let p = parse_program modname (Ace.get_contents editor) in
-     compile_program modname p
-   with e -> ());
+  let modname = prepare_module () in
+  let p = parse_program modname (Ace.get_contents editor) in
+  let p = compile_program modname p in
 
-  match panel.ptype with
-  | Source -> ()
-  | MiniLS ->
-    Ace.set_contents panel.editor (read_file "tryhept.mls")
-  | Obc ->
-    Ace.set_contents panel.editor (read_file "tryhept.obc")
+  match panel with
+  | AcePanel (id, panel) ->
+    (match panel.ptype with
+     | Source -> ()
+     | MiniLS ->
+       Ace.set_contents panel.editor (read_file "tryhept.mls")
+     | Obc ->
+       Ace.set_contents panel.editor (read_file "tryhept.obc")
+     | _ -> invalid_arg "compile_and_output"
+    )
+  | InterpPanel id ->
+    Interp.load_interp id p Chronogram
 
 let (let*) = Lwt.bind
 let (and*) = Lwt.both
@@ -167,20 +171,25 @@ let _ =
   let* _ = download_pervasives () in
 
   let editor_panel = Page.(create_panel Source []) in
+  let editor = match editor_panel with AcePanel (_, panel) -> panel.editor | _ -> failwith "Not Good" in
 
   (* Direct error channel *)
-  Sys_js.set_channel_flusher stderr (fun e -> print_error editor_panel.editor e);
+  Sys_js.set_channel_flusher stderr (fun e -> print_error editor e);
 
   (* Compilation function *)
   let compile () =
-    try List.iter (fun p -> compile_and_output editor_panel.editor p) !Page.output_panels
+    try List.iter (fun p -> compile_and_output editor p) !Page.output_panels
     with _ -> ()
   in
 
   Page.add_panel_control editor_panel ("+MiniLS", Button (fun () -> ignore Page.(create_panel MiniLS []); compile ()));
   Page.add_panel_control editor_panel ("+Obc", Button (fun () -> ignore Page.(create_panel Obc []); compile ()));
-  editor_panel.editor.editor##on (Js.string "change") (fun () ->
-      Page.save_program (Ace.get_contents editor_panel.editor);
+
+  Page.add_panel_control editor_panel
+    ("+Interp Chrono",
+     Button (fun () -> ignore Page.(create_panel (Interpreter Table) []); compile ()));
+  editor.editor##on (Js.string "change") (fun () ->
+      Page.save_program (Ace.get_contents editor);
       compile ());
-  Ace.set_contents editor_panel.editor (Page.get_saved_program ());
+  Ace.set_contents editor (Page.get_saved_program ());
   Lwt.return ()
