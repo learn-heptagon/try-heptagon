@@ -5,8 +5,23 @@
         <link href="https://fonts.googleapis.com/css?family=Roboto+Mono" rel="stylesheet">
         <link rel="stylesheet" href="style.css"/>
         <script src="ace-builds/src-noconflict/ace.js" type="text/javascript" charset="utf-8"></script>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@2.8.0"></script>
     </head>
     <body>
+        <nav class="navbar">
+            <ul>
+                <li><button>Exercices</button>
+                    <ul id="examples">
+                    </ul>
+                </li>
+                <li><button>About</button>
+                    <ul>
+                        <li><a href="https://gitlab.inria.fr/synchrone/heptagon/-/blob/ec26be27b91f3e601b98b8b7e15e8d56d4b9afc7/manual/heptagon-manual.pdf" target="_blank">Heptagon Manual</a></li>
+                        <!-- <li><a href="https://gitlab.inria.fr/synchrone/heptagon">Heptagon Source</a></li> -->
+                    </ul>
+                </li>
+            </ul>
+        </nav>
         <div id="body"></div>
         <ul id="console"></ul>
         <script>

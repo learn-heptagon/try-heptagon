@@ -1,0 +1,49 @@
+node redge(b: bool) returns (edge: bool)
+let
+    (* TODO *)
+tel
+
+-- node always(b: bool) returns (out: bool)
+-- let
+--     (* TODO *)
+-- tel
+
+-- node count_true(in: bool) returns (out: int)
+-- let
+--     (* TODO *)
+-- tel
+
+-- node count_succ_true(in: bool) returns (out: int)
+-- let
+--     (* TODO *)
+-- tel
+
+-- node sum(x: int) returns (p: int)
+-- let
+--     (* TODO *)
+-- tel
+
+-- node fact() returns(f: int)
+-- let
+--     (* TODO *)
+-- tel
+
+-- node switch(on, off: bool) returns (s: bool)
+-- let
+--     (* TODO *)
+-- tel
+
+-- node counter(reset: bool) returns (c: int)
+-- let
+--     (* TODO *)
+-- tel
+
+-- node alternating(x: int) returns (y: int);
+-- let
+--     (* TODO *)
+-- tel
+
+-- node alternating2(x: int; s: bool) returns (y: int);
+-- let
+--     (* TODO *)
+-- tel

@@ -9,7 +9,7 @@ module type Interpreter = sig
   (** Interpreter state *)
   type state
 
-  (** Init the interpreter from the AST the program *)
+  (** Init/reinit the interpreter from the AST the program *)
   val reset : syn -> string -> state
 
   (** Call the given node, take a step *)
@@ -118,7 +118,7 @@ let load_interp (panelid : string) (prog: Obc.program) int =
        Page.create_select editorid names (choose_default names !old_node)
          (fun cname ->
             old_node := Some cname;
-            let cls = Obc_interp.find_class prog { qual = LocalModule; name = cname } in
+            let cls = Obc_interp.find_class prog cname in
             let met = Obc_interp.find_method cls Mstep in
             let mem = ref (Obc_interp.reset prog cname) in
 
@@ -126,6 +126,7 @@ let load_interp (panelid : string) (prog: Obc.program) int =
               mem := Obc_interp.reset prog cname
             and step_fun = fun inputs ->
               let inputs = List.map2 (fun vd s -> parse_input vd.v_type s) met.m_inputs inputs in
+              (* Obc_printer.print_prog Format.std_formatter prog; *)
               let (outputs, new_mem) = Obc_interp.step prog cname inputs !mem in
               mem := new_mem;
               List.map string_of_svalue outputs
@@ -139,10 +140,19 @@ let load_interp (panelid : string) (prog: Obc.program) int =
      with _ -> ())
   | Simulator simul ->
     let (module Simul) = simul in
-    stop_fun := Simul.init editorid
+    stop_fun := Simul.stop editorid;
+    Simul.start editorid
 
 let interpreter_of_example s p =
   match s with
+  (* | "full-adder.lus" -> *)
+  (*   Simulator (module Simul.TruthTable) *) (* TODO *)
+  | "filters.lus" ->
+    Simulator (module Simul.FilterSimul(
+                          ObcSimulInterpreter(struct
+                              let prog = p
+                              let classname = "system"
+      end)))
   (* | "stepper.lus" -> Simulator (module Stepper_simul.StepperSimul( *)
   (*       ObcSimulInterpreter(struct *)
   (*         let prog = p *)

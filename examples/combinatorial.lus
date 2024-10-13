@@ -1,0 +1,14 @@
+node max(fst, snd : real) returns (out : real)
+let
+    (* TODO *)
+tel
+
+-- node abs(x : real) returns (out : real)
+-- let
+--     (* TODO *)
+-- tel
+
+-- node saturate(l_bound, x, u_bound : real) returns (out : real)
+-- let
+--     (* TODO *)
+-- tel

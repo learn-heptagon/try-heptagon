@@ -129,7 +129,7 @@ let reset_editor (editor: unit Ace.editor) =
   Page.Console.clear ()
 
 (** Compile the program for visualisation purposes *)
-let compile_and_exn editor step =
+let compile_and_exn editor =
   reset_editor editor;
 
   try
@@ -137,6 +137,11 @@ let compile_and_exn editor step =
     let p = parse_program modname (Ace.get_contents editor) in
     check_program p stdout
   with e -> () (* print_error (Printexc.to_string e) *)
+
+let get_loaded_file () = Page.get_string_from_storage "loaded"
+let save_loaded_file s = Page.save_string_in_storage "loaded" s
+
+let loaded_file = ref (match get_loaded_file () with Some s -> s | None -> "")
 
 let compile_and_output editor (panel: Page.panel) =
   reset_editor editor;
@@ -156,7 +161,7 @@ let compile_and_output editor (panel: Page.panel) =
      | _ -> invalid_arg "compile_and_output"
     )
   | InterpPanel id ->
-    Interp.load_interp id p Chronogram
+    Interp.load_interp id p (interpreter_of_example !loaded_file p)
 
 let (let*) = Lwt.bind
 let (and*) = Lwt.both
@@ -167,29 +172,66 @@ let download_pervasives () =
   close_out outf;
   Lwt.return ()
 
+let download_mathlib () =
+  let outf = open_out_bin "mathlib.epci" in
+  List.iter (output_byte outf) Mathlib.mathlib;
+  close_out outf;
+  Lwt.return ()
+
+let set_loaded_file s =
+  save_loaded_file s;
+  loaded_file := s
+
+let save_program s =
+  Page.save_string_in_storage !loaded_file s
+
+let load_program () =
+  match Page.get_string_from_storage !loaded_file with
+  | Some s -> s
+  | None -> "(* Your code here... *)"
+
+let load_example editor name content =
+  set_loaded_file name;
+  let content =
+    match Page.get_string_from_storage name with
+    | Some s -> s
+    | None -> content
+  in
+  Ace.set_contents editor content;
+  (* load interpreter *)
+  Page.clear_panels ();
+  ignore Page.(create_panel Interpreter [])
+
 let _ =
   let* _ = download_pervasives () in
+  let* _ = download_mathlib () in
 
   let editor_panel = Page.(create_panel Source []) in
-  let editor = match editor_panel with AcePanel (_, panel) -> panel.editor | _ -> failwith "Not Good" in
+  let editor_panel = match editor_panel with AcePanel (_, panel) -> panel | _ -> failwith "Not Good" in
+  let editor = editor_panel.editor in
 
   (* Direct error channel *)
-  Sys_js.set_channel_flusher stderr (fun e -> print_error editor e);
+  Sys_js.set_channel_flusher stderr (fun e -> print_error editor_panel.editor e);
 
   (* Compilation function *)
   let compile () =
-    try List.iter (fun p -> compile_and_output editor p) !Page.output_panels
+    try
+      compile_and_exn editor_panel.editor;
+      List.iter (fun p -> compile_and_output editor_panel.editor p) !Page.output_panels
     with _ -> ()
   in
 
-  Page.add_panel_control editor_panel ("+MiniLS", Button (fun () -> ignore Page.(create_panel MiniLS []); compile ()));
-  Page.add_panel_control editor_panel ("+Obc", Button (fun () -> ignore Page.(create_panel Obc []); compile ()));
+  Page.add_examples (fun name content -> load_example editor name content; compile ());
 
-  Page.add_panel_control editor_panel
-    ("+Interp Chrono",
-     Button (fun () -> ignore Page.(create_panel (Interpreter Table) []); compile ()));
+  (* Page.add_panel_control editor_panel ("+MiniLS", Button (fun () -> ignore Page.(create_panel MiniLS []); compile ())); *)
+
+  (* Page.add_panel_control editor_panel *)
+  (*   ("+Interp Chrono", *)
+  (*    Button (fun () -> ignore Page.(create_panel (Interpreter Table) []); compile ())); *)
   editor.editor##on (Js.string "change") (fun () ->
-      Page.save_program (Ace.get_contents editor);
+      save_program (Ace.get_contents editor);
       compile ());
-  Ace.set_contents editor (Page.get_saved_program ());
+  load_example editor !loaded_file (load_program ());
+  ignore Page.(create_panel Obc []); (* TEMP *)
+  compile ();
   Lwt.return ()

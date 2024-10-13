@@ -5,16 +5,20 @@ SRC_DIR := heptc/src
 EXTRACTED := heptc/extraction/extracted
 
 FLAGS=-use-ocamlfind -Is heptagon/compiler/ \
-      -pkgs str,unix,menhirLib,ocamlgraph,js_of_ocaml,js_of_ocaml-ppx,js_of_ocaml-tyxml,js_of_ocaml-lwt,ezjs_ace \
+      -pkgs str,unix,menhirLib,ocamlgraph,js_of_ocaml,js_of_ocaml-ppx,js_of_ocaml-tyxml,js_of_ocaml-lwt,ezjs_ace,chartjs \
 	  -no-hygiene
 
 SRC := \
+	examples.ml \
 	page.ml \
 	simul.ml interp.ml \
 	tryhept.ml \
-	pervasives.ml \
+	pervasives.ml mathlib.ml
 
-all: tryhept.js pervasives.epci
+all: tryhept.js
+
+examples.ml:
+	ocaml preproc_examples.ml
 
 tryhept.byte: $(SRC)
 	@echo "${bold}Building tryhept...${normal}"
@@ -24,11 +28,11 @@ tryhept.byte: $(SRC)
 tryhept.js: tryhept.byte
 	js_of_ocaml $^
 
-pervasives.epci: heptagon/lib/pervasives.epi
+%.epci: heptagon/lib/%.epi
 	cd heptagon/lib && make
-	cp heptagon/lib/pervasives.epci .
+	cp heptagon/lib/$@ .
 
-pervasives.ml: pervasives.epci embed_epci.ml
+%.ml: %.epci embed_epci.ml
 	ocaml embed_epci.ml $^ > $@
 
 clean:

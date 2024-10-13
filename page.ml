@@ -7,21 +7,21 @@ module T = Tyxml_js.Html5
 let by_id s = Dom_html.getElementById s
 let of_node = Tyxml_js.To_dom.of_node
 
-(** Get the program kept in session storage *)
-let get_saved_program () =
+(** Get a string from local storage *)
+let get_string_from_storage loc =
   Js.Optdef.case Dom_html.window##.localStorage
-    (fun () -> "")
+    (fun () -> None)
     (fun stor ->
-       Js.Opt.case (stor##getItem (Js.string "saved_program"))
-         (fun () -> "")
-         (fun s -> Js.to_string s))
+       Js.Opt.case (stor##getItem (Js.string loc))
+         (fun () -> None)
+         (fun s -> Some (Js.to_string s)))
 
-(** Save a program in session storage *)
-let save_program prog =
+(** Save a string in local storage *)
+let save_string_in_storage loc s =
   Js.Optdef.case Dom_html.window##.localStorage
     (fun () -> ())
     (fun stor ->
-       stor##setItem (Js.string "saved_program") (Js.string prog))
+       stor##setItem (Js.string loc) (Js.string s))
 
 (** Remove all children of a div *)
 let clear_div divid =
@@ -64,29 +64,19 @@ module Atom = struct
     counter := !counter+1; Printf.sprintf "%s%d" s !counter
 end
 
-(* Resizable panels *)
-
-type interp_type =
-  | Table
-  | Graph
-  | Audio
+(** Panels *)
 
 type panel_type =
   | Source
   | MiniLS
   | Obc
-  | Interpreter of interp_type
-
-let label_of_interp_type = function
-  | Table -> "Table"
-  | Graph -> "Graph"
-  | Audio -> "Audio"
+  | Interpreter
 
 let label_of_panel = function
   | Source -> "Source"
   | MiniLS -> "MiniLS"
   | Obc -> "Obc"
-  | Interpreter typ -> Printf.sprintf "Interpreter"
+  | Interpreter -> Printf.sprintf "Interpreter"
 
 type control =
   | Button of (unit -> unit)
@@ -109,6 +99,9 @@ let panel_id = function
   | InterpPanel id -> id
 
 let output_panels : panel list ref = ref []
+
+let plug_button buttonid f =
+  (by_id buttonid)##.onclick := Dom_html.handler (fun _ -> f (); Js._true)
 
 let plug_checkbox id setting =
   (Js.Unsafe.coerce (by_id id))##.checked := Js.bool !setting;
@@ -141,6 +134,11 @@ let remove_panel id =
     (List.find_opt (fun p -> panel_id p = id) !output_panels);
   output_panels := List.filter (fun p -> panel_id p <> id) !output_panels;
   Dom.removeChild (by_id "body") (by_id id)
+
+let clear_panels () =
+  List.iter (function AcePanel (_, p) -> Ace.remove p.editor | _ -> ()) !output_panels;
+  List.iter (fun p -> Dom.removeChild (by_id "body") (by_id (panel_id p))) !output_panels;
+  output_panels := []
 
 (** Interpreter panel *)
 
@@ -246,14 +244,14 @@ let create_panel ptype controls =
                                      [T.(div ~a:[a_id controlsdivid] []);
                                       T.(div ~a:[a_id editordivid; a_class ["editor"]] [])])));
   let readOnly = ptype <> Source in
-  if readOnly then plug_control (by_id controlsdivid) ("X", Button (fun _ -> remove_panel divid));
+  (* if readOnly then plug_control (by_id controlsdivid) ("X", Button (fun _ -> remove_panel divid)); *)
   ignore
     ((by_id controlsdivid)##appendChild (of_node T.(span ~a:[a_class ["panel-title"]]
                                                       [txt (label_of_panel ptype)])));
   List.iter (plug_control (by_id controlsdivid)) controls;
   let panel =
     match ptype with
-    | Interpreter Table -> InterpPanel divid
+    | Interpreter -> InterpPanel divid
     | _ ->
       let editordiv = by_id editordivid in
       let panel = {
@@ -285,3 +283,13 @@ let create_select divid (options : string list) default (onselect : string -> un
   select##.onchange :=
     (fun e -> onselect (Js.to_string select##.value); true);
   select##.value := default; onselect default
+
+(** Examples *)
+
+let add_examples load_example =
+  let list = by_id "examples" in
+  List.iter (fun (name, content) ->
+      let id = Atom.fresh "example" in
+      Dom.appendChild list (of_node T.(li ~a:[] [button ~a:[a_id id] [txt ("Open "^name)]]));
+      plug_button id (fun _ -> load_example name content)
+    ) Examples.examples

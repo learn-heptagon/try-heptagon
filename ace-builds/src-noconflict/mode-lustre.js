@@ -5,10 +5,10 @@ ace.define("ace/mode/lustre_highlight_rules",["require","exports","module","ace/
     var TextHighlightRules = require("./text_highlight_rules").TextHighlightRules;
 
     var LustreHighlightRules = function() {
-        var keywords = "type|node|returns|var|let|tel" +
+        var keywords = "open|type|const|fun|node|returns|var|let|tel" +
             "|if|then|else|fby|when|merge|switch|do|end|reset|every|" +
             "automaton|state|until|unless|continue|last|" +
-            "system|init|sub|transition|next|" + // stc coloring
+            "and|or|xor|" + // operators
             "class|instance|step|case|of|in|default|skip|" + // obc coloring
             "break|while|return"; // C coloring
 
