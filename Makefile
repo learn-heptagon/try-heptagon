@@ -5,7 +5,7 @@ SRC_DIR := heptc/src
 EXTRACTED := heptc/extraction/extracted
 
 FLAGS=-use-ocamlfind -Is heptagon/compiler/ \
-      -pkgs str,unix,menhirLib,ocamlgraph,js_of_ocaml,js_of_ocaml-ppx,js_of_ocaml-tyxml,js_of_ocaml-lwt,ezjs_ace,chartjs \
+      -pkgs str,unix,menhirLib,ocamlgraph,js_of_ocaml,js_of_ocaml-ppx,js_of_ocaml-tyxml,js_of_ocaml-lwt.graphics,ezjs_ace,chartjs \
 	  -no-hygiene
 
 SRC := \

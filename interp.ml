@@ -95,6 +95,7 @@ let string_of_value = function
   | Vbool b -> if b then "true" else "false"
   | Vint i -> string_of_int i
   | Vfloat f -> string_of_float f
+  | Vundef -> "undef"
 
 let string_of_svalue = function
   | None -> "."
@@ -140,10 +141,10 @@ let load_interp (panelid : string) (prog: Obc.program) int =
      with _ -> ())
   | Simulator simul ->
     let (module Simul) = simul in
-    stop_fun := Simul.stop editorid;
-    Simul.start editorid
+    stop_fun := Simul.init editorid
 
 let interpreter_of_example s p =
+  Obc_printer.print_prog Format.std_formatter p;
   match s with
   (* | "full-adder.lus" -> *)
   (*   Simulator (module Simul.TruthTable) *) (* TODO *)
@@ -153,6 +154,12 @@ let interpreter_of_example s p =
                               let prog = p
                               let classname = "system"
       end)))
+  | "stopwatch.lus" -> Simulator (module Simul.StopwatchSimul(
+        ObcSimulInterpreter(struct
+          let prog = p
+          let classname = "stopwatch"
+        end)
+      ))
   (* | "stepper.lus" -> Simulator (module Stepper_simul.StepperSimul( *)
   (*       ObcSimulInterpreter(struct *)
   (*         let prog = p *)
@@ -162,12 +169,6 @@ let interpreter_of_example s p =
   (*       ObcSimulInterpreter(struct *)
   (*         let prog = p *)
   (*         let classname = "control_porte" *)
-  (*       end) *)
-  (*     )) *)
-  (* | "chrono.lus" -> Simulator (module Chrono_simul.Simul( *)
-  (*       ObcSimulInterpreter(struct *)
-  (*         let prog = p *)
-  (*         let classname = "main" *)
   (*       end) *)
   (*     )) *)
   | _ -> Chronogram

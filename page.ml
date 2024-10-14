@@ -29,6 +29,8 @@ let clear_div divid =
   let children = Dom.list_of_nodeList div##.childNodes in
   List.iter (fun n -> Dom.removeChild div n) children
 
+let width divid = (by_id divid)##.offsetWidth
+
 (** Manipulate the console *)
 module Console = struct
   (** access to the console *)
@@ -293,3 +295,8 @@ let add_examples load_example =
       Dom.appendChild list (of_node T.(li ~a:[] [button ~a:[a_id id] [txt ("Open "^name)]]));
       plug_button id (fun _ -> load_example name content)
     ) Examples.examples
+
+let create_canvas divid width height : Dom_html.canvasElement Js.t =
+  let canvas = of_node T.(canvas ~a:[a_width width; a_height height] []) in
+  Dom.appendChild (by_id divid) canvas;
+  Js.Unsafe.coerce canvas
