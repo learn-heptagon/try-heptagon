@@ -1,0 +1,30 @@
+open Mathlib
+
+const pi : float = 3.14159265359
+
+node source() returns (ni : int; y : float);
+var n : float;
+let
+  n = (-. 5.0) -> pre (n +. 1.0);
+  y = if 0.0 <=. n and n <=. 40.0
+      then power(1.02, n) +. 0.5 *. cos(2.0 *. pi *. n /. 8.0 +. pi /. 4.0)
+      else 0.0;
+  ni = round(n);
+tel
+
+node fifo<<n:int; y0:float>>(x : float) returns (y : float);
+let
+    y = x; (* TODO *)
+tel
+
+
+node sliding_average<<n:int>>(x : float) returns (y : float);
+let
+  y = x; (* TODO *)
+tel
+
+node system() returns (n : int; s, y : float);
+let
+  (n, s) = source();
+  y = s; (* TODO *)
+tel

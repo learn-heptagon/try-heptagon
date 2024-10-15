@@ -14,7 +14,9 @@ let read_file filename =
     s
 
 let open_and_read () =
-  let files = ["combinatorial.lus"; "full-adder.lus"; "stateful.lus"; "filters.lus"; "stopwatch.lus"] in
+  let files = ["combinatorial.lus"; "full-adder.lus"; "stateful.lus"; "filters.lus"; "stopwatch.lus";
+               "two-states.lus";
+               "fifo-filters.lus"; "fifo-audio.lus"; "iterators.lus" ] in
   List.map (fun f -> (f, read_file (example_dir^"/"^f))) files
 
 let print_content pf name content =

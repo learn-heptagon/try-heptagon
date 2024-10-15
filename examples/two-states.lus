@@ -1,0 +1,9 @@
+node two_states(min, max : int; toggle_pause : bool) returns (last o : int = 0);
+let
+    (* TODO *)
+tel
+
+node strong_two_states(min, max : int) returns (last o : int = 0);
+let
+    (* TODO *)
+tel

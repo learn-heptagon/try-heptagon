@@ -88,7 +88,7 @@ let prepare_module () =
 (** Show an error with [text] at [loc] in the console as well as the editor *)
 let add_error_marker (editor : unit Ace.editor) (r1, r2) (c1, c2) =
   let open Ace in let open Ace_types in
-  Printf.fprintf stdout "%d:%d, %d:%d\n" r1 c1 r2 c2;
+  (* Printf.fprintf stdout "%d:%d, %d:%d\n" r1 c1 r2 c2; *)
   let range = Ace.range (r1-1) c1 (r2-1) c2 in
   ignore (editor.editor##getSession##addMarker range
             (Js.string "error-marker") (Js.string "text") (Js.bool true))
@@ -232,6 +232,6 @@ let _ =
       save_program (Ace.get_contents editor);
       compile ());
   load_example editor !loaded_file (load_program ());
-  ignore Page.(create_panel Obc []); (* TEMP *)
+  (* ignore Page.(create_panel Obc []); (\* TEMP *\) *)
   compile ();
   Lwt.return ()

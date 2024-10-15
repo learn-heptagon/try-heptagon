@@ -1,4 +1,4 @@
-node stopwatch(on_off, rs, freeze: bool) returns (time: int)
+node stopwatch(on_off, rst, freeze: bool) returns (time: int)
 let
     (* TODO *)
 tel

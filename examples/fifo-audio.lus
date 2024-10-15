@@ -1,0 +1,9 @@
+node fifo<<n:int; y0:float>>(x : float) returns (y : float);
+let
+    y = x; (* TODO *)
+tel
+
+node main(ic1, ic2 : float) returns (oc1, oc2 : float);
+let
+  (oc1, oc2) = (ic1, ic2); (* TODO *)
+tel

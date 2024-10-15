@@ -13,7 +13,7 @@ module type Interpreter = sig
   val reset : syn -> string -> state
 
   (** Call the given node, take a step *)
-  val step : syn -> string -> state -> value option list -> (value option list * state)
+  val step : syn -> string -> state -> value list -> (value list * state)
 end
 
 exception InterpreterError of string
@@ -33,7 +33,7 @@ let () =
 (* let str_of_ident x = Camlcoq.camlstring_of_coqstring @@ Ident.pos_to_str @@ x *)
 
 (* Interpreting Obc *)
-module ObcInterpreter : Interpreter with type syn = Obc.program = struct
+module ObcInterpreter : Interpreter with type syn = Obc.program and type state = Obc_interp.memory = struct
   type syn = Obc.program
   type state = Obc_interp.memory
 
@@ -46,7 +46,7 @@ module ObcSimulInterpreter(P : sig
     val prog : Obc.program
     val classname : string
   end) : Simul.Interpreter = struct
-  let mem = ref (ObcInterpreter.reset P.prog P.classname)
+  let mem = ref Obc_interp.init_memory
 
   let reset () =
     mem := ObcInterpreter.reset P.prog P.classname
@@ -81,25 +81,22 @@ let ( let* ) x f =
 
 let parse_input typ s =
   try
-    if s = "." then None
+    if s = "." then Vundef
     else
       let open Types in
-      Some (match typ with
-            | Tid { name = "bool" } -> Vbool (s = "true")
-            | Tid { name = "int" } -> Vint (int_of_string s)
-            | Tid { name = "real" } | Tid { name = "float" } -> Vfloat (float_of_string s)
-            | _ -> failwith "TODO")
+      match typ with
+      | Tid { name = "bool" } -> Vbool (s = "true")
+      | Tid { name = "int" } -> Vint (int_of_string s)
+      | Tid { name = "real" } | Tid { name = "float" } -> Vfloat (float_of_string s)
+      | _ -> failwith "TODO"
   with _ -> raise (ParseInputError s)
 
 let string_of_value = function
   | Vbool b -> if b then "true" else "false"
   | Vint i -> string_of_int i
   | Vfloat f -> string_of_float f
-  | Vundef -> "undef"
-
-let string_of_svalue = function
-  | None -> "."
-  | Some v -> string_of_value v
+  | Vconstructor c -> c.name
+  | Vundef -> "."
 
 let stop_fun = ref (fun _ -> ())
 
@@ -130,7 +127,7 @@ let load_interp (panelid : string) (prog: Obc.program) int =
               (* Obc_printer.print_prog Format.std_formatter prog; *)
               let (outputs, new_mem) = Obc_interp.step prog cname inputs !mem in
               mem := new_mem;
-              List.map string_of_svalue outputs
+              List.map string_of_value outputs
             in
 
             Page.create_hist_table editorid
@@ -144,21 +141,29 @@ let load_interp (panelid : string) (prog: Obc.program) int =
     stop_fun := Simul.init editorid
 
 let interpreter_of_example s p =
-  Obc_printer.print_prog Format.std_formatter p;
+  (* Obc_printer.print_prog Format.std_formatter p; *)
   match s with
   (* | "full-adder.lus" -> *)
   (*   Simulator (module Simul.TruthTable) *) (* TODO *)
-  | "filters.lus" ->
+  | "filters.lus" | "fifo-filters.lus" ->
     Simulator (module Simul.FilterSimul(
                           ObcSimulInterpreter(struct
                               let prog = p
                               let classname = "system"
       end)))
-  | "stopwatch.lus" -> Simulator (module Simul.StopwatchSimul(
-        ObcSimulInterpreter(struct
-          let prog = p
-          let classname = "stopwatch"
-        end)
+  | "stopwatch.lus" ->
+    Simulator (module Simul.StopwatchSimul(
+                          ObcSimulInterpreter(struct
+                              let prog = p
+                              let classname = "stopwatch"
+                            end)
+      ))
+  | "fifo-audio.lus" ->
+    Simulator (module Simul.AudioFilterSimul(
+                          ObcSimulInterpreter(struct
+                              let prog = p
+                              let classname = "main"
+                            end)
       ))
   (* | "stepper.lus" -> Simulator (module Stepper_simul.StepperSimul( *)
   (*       ObcSimulInterpreter(struct *)

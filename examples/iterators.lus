@@ -1,0 +1,14 @@
+node adder(a, b : bool^8) returns (s : bool^8; co : bool);
+let
+    (* TODO *)
+tel
+
+node edgedetect(s : bool^8) returns (edge : bool);
+let
+    (* TODO *)
+tel
+
+node edgedetect(s : bool^8) returns (edge : bool);
+let
+    (* TODO *)
+tel

@@ -25,9 +25,19 @@
         <div id="body"></div>
         <ul id="console"></ul>
         <script>
-         process = [];
-         process.env = [];
-         process.env["COMPCERT_CONFIG"] = "compcert.ini";
+            async function loadAudio(file) {
+                let audioCtx = new AudioContext();
+                return await audioCtx.decodeAudioData(await file.arrayBuffer());
+            }
+
+            function playBuffer(buffer) {
+                console.log(buffer);
+                let audioCtx = new AudioContext();
+                let source = audioCtx.createBufferSource();
+                source.buffer = buffer;
+                source.connect(audioCtx.destination);
+                source.start();
+            }
         </script>
         <script src="tryhept.js"></script>
     </body>
