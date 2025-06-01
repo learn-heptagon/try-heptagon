@@ -8,12 +8,12 @@ tel
 --     (* TODO *)
 -- tel
 
--- node count_true(in: bool) returns (out: int)
+-- node count_true(i: bool) returns (out: int)
 -- let
 --     (* TODO *)
 -- tel
 
--- node count_succ_true(in: bool) returns (out: int)
+-- node count_succ_true(i: bool) returns (out: int)
 -- let
 --     (* TODO *)
 -- tel

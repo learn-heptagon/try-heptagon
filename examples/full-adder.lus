@@ -1,9 +1,9 @@
-node half_adder(a, b: bool) returns (s, c: bool)
+node full_adder(a, b, c: bool) returns (s, co : bool)
 let
     (* TODO *)
 tel
 
-node full_adder(a, b, c: bool) returns (s, co : bool)
+node half_adder(a, b: bool) returns (s, c: bool)
 let
     (* TODO *)
 tel

@@ -8,7 +8,7 @@ ace.define("ace/mode/lustre_highlight_rules",["require","exports","module","ace/
         var keywords = "open|type|const|fun|node|returns|var|let|tel" +
             "|if|then|else|fby|when|merge|switch|do|end|reset|every|" +
             "automaton|state|until|unless|continue|last|" +
-            "and|or|xor|" + // operators
+            "and|or|xor|not|" + // operators
             "class|instance|step|case|of|in|default|skip|" + // obc coloring
             "break|while|return"; // C coloring
 
