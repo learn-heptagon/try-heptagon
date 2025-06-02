@@ -153,7 +153,7 @@ let input_cell isbool =
        ~a:[a_class ["history"]])
 let output_cell isbool = T.(td [] ~a:[a_class ["history"]])
 
-let rec create_hist_table divid ins outs reset_fun step_fun =
+let rec create_hist_table divid inps outs reset_fun step_fun =
   let div = by_id divid in
   (try Dom.removeChild div (by_id interp_hist_id) with _ -> ());
 
@@ -166,7 +166,7 @@ let rec create_hist_table divid ins outs reset_fun step_fun =
       rowid, isbool, T.(tr ~a:[a_id rowid] [th [txt s]]))
   in
 
-  let hins = make_first_column ins and houts = make_first_column outs in
+  let hins = make_first_column inps and houts = make_first_column outs in
 
   let tabl = T.(table ~a:[] (hhead::List.map (fun (_, _, x) -> x) (hins@houts))) in
   let interp_div = of_node T.(div ~a:[a_id interp_hist_id] [tabl]) in
@@ -234,7 +234,18 @@ let rec create_hist_table divid ins outs reset_fun step_fun =
            with e -> Console.error (Printexc.to_string e));
           true)]
       [txt "step"]) in
-  Dom.appendChild interp_div (of_node step_button)
+  Dom.appendChild interp_div (of_node step_button);
+
+  let reset_button = T.(button ~a:[
+      a_onclick (fun _ ->
+          (try
+             create_hist_table divid inps outs reset_fun step_fun
+           with e -> Console.error (Printexc.to_string e));
+          true)]
+      [txt "reset"]) in
+  Dom.appendChild interp_div (of_node reset_button);
+
+  reset_fun ()
 
 let create_panel ptype controls =
   let body = by_id "body" in
