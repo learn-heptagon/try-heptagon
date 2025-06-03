@@ -153,6 +153,9 @@ let input_cell isbool =
        ~a:[a_class ["history"]])
 let output_cell isbool = T.(td [] ~a:[a_class ["history"]])
 
+let saved_inputs = ref []
+let saved_inps = ref []
+
 let rec create_hist_table divid inps outs reset_fun step_fun =
   let div = by_id divid in
   (try Dom.removeChild div (by_id interp_hist_id) with _ -> ());
@@ -167,6 +170,9 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
   in
 
   let hins = make_first_column inps and houts = make_first_column outs in
+
+  if !saved_inps <> inps then saved_inputs := [];
+  saved_inps := inps;
 
   let tabl = T.(table ~a:[] (hhead::List.map (fun (_, _, x) -> x) (hins@houts))) in
   let interp_div = of_node T.(div ~a:[a_id interp_hist_id] [tabl]) in
@@ -221,12 +227,37 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
     count := !count + 1
   in
 
+  let restore_saved_inputs () =
+    List.iter (fun inputs ->
+      add_column ();
+      let rec fill_inputs rows values =
+        match rows, values with
+          | [], [] -> ()
+          | (row, ischeckbox) :: trows, value :: tvalues ->
+            if ischeckbox then
+              (get_row_input row)##.checked := Js.bool (value = "true")
+            else
+              (get_row_input row)##.value := Js.string value;
+            fill_inputs trows tvalues
+          | _ -> ()
+      in
+      fill_inputs inprows inputs;
+      try
+        let outputs = step_fun inputs in
+        set_latest_outputs outputs;
+        disable_latest_inputs ()
+      with e -> Console.error (Printexc.to_string e))
+    !saved_inputs
+  in
+
+  restore_saved_inputs ();
   add_column ();
 
   let step_button = T.(button ~a:[
       a_onclick (fun _ ->
           (try
              let inputs = get_latest_inputs () in
+             saved_inputs := !saved_inputs @ [inputs];
              let outputs = step_fun inputs in
              set_latest_outputs outputs;
              disable_latest_inputs ();
@@ -239,6 +270,7 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
   let reset_button = T.(button ~a:[
       a_onclick (fun _ ->
           (try
+             saved_inputs := [];
              create_hist_table divid inps outs reset_fun step_fun
            with e -> Console.error (Printexc.to_string e));
           true)]
