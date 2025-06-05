@@ -230,15 +230,15 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
   let restore_saved_inputs () =
     List.iter (fun inputs ->
       add_column ();
-      let rec fill_inputs rows values =
-        match rows, values with
+      let rec fill_inputs rows rows_values =
+        match rows, rows_values with
           | [], [] -> ()
-          | (row, ischeckbox) :: trows, value :: tvalues ->
+          | (row_id, ischeckbox) :: trows, row_value :: trows_values ->
             if ischeckbox then
-              (get_row_input row)##.checked := Js.bool (value = "true")
+              (get_row_input row_id)##.checked := Js.bool (row_value = "true")
             else
-              (get_row_input row)##.value := Js.string value;
-            fill_inputs trows tvalues
+              (get_row_input row_id)##.value := Js.string row_value;
+            fill_inputs trows trows_values
           | _ -> ()
       in
       fill_inputs inprows inputs;
