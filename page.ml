@@ -171,7 +171,7 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
 
   let hins = make_first_column inps and houts = make_first_column outs in
 
-  if !saved_inps <> inps then saved_inputs := [];
+  if List.map snd !saved_inps <> List.map snd inps then saved_inputs := [];
   saved_inps := inps;
 
   let tabl = T.(table ~a:[] (hhead::List.map (fun (_, _, x) -> x) (hins@houts))) in
