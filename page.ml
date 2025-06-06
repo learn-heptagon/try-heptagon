@@ -169,11 +169,12 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
   let make_first_column =
     List.map (fun (s, isbool) ->
       let rowid = Atom.fresh "row" in
-      rowid, isbool, T.(tr ~a:[a_id rowid] [th [txt s]]))
+      rowid, isbool, T.(tr ~a:[a_id rowid] [th [txt s; txt " = "]]))
   in
 
   let hins = make_first_column inps and houts = make_first_column outs in
 
+  (* Reset the saved inputs list if the saved inputs have changed (ignoring changes in names) *)
   if List.map snd !saved_inps <> List.map snd inps then saved_inputs := [];
   saved_inps := inps;
 
@@ -192,9 +193,10 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
     let opt_get o = Js.Opt.get o (fun _ -> failwith "get_row_input") in
     opt_get (opt_get row##.lastChild)##.firstChild |> Js.Unsafe.coerce in
 
+  (* Add an editor in order to enter an expression in Heptagon *)
   List.iter (fun (row, _) ->
     let input_editor_div_id = Atom.fresh "input-editor" in
-    let input_editor_div = T.(div ~a:[a_id input_editor_div_id; a_class ["editor"; "editor-row"]] []) in
+    let input_editor_div = T.(div ~a:[a_id input_editor_div_id; a_class ["editor"; "editor-row"]][]) in
     Dom.appendChild row (of_node input_editor_div);
     let editor_struct = Ace.({
       editor_div = by_id input_editor_div_id;
@@ -207,6 +209,15 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
     Ace.set_tab_size editor_struct 2;
     ()
   ) inprows;
+
+  (* As we added a new cell for each row of inputs, we need to create a initial gap to correctly align the rows of inputs with the head row and the rows of outputs *)
+  let add_empty_cell list_of_couples =
+    List.iter (fun (row, isbool) ->
+      Dom.appendChild row (of_node (output_cell isbool))
+  ) list_of_couples in
+
+  add_empty_cell [(head, false)];
+  add_empty_cell outrows;
 
   (* Get the input values. If they are not all available, raise *)
   let get_latest_inputs () =
@@ -246,6 +257,7 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
     count := !count + 1
   in
 
+  (* Restore previously saved inputs and display them in the table. That ensures that the table is not graphically reset at each new compilation (unless the number of entries or the type of even a single entry changes). *)
   let restore_saved_inputs () =
     List.iter (fun inputs ->
       add_column ();
