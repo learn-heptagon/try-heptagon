@@ -156,6 +156,9 @@ let output_cell isbool = T.(td [] ~a:[a_class ["history"]])
 let saved_inputs = ref []
 let saved_inps = ref []
 
+let set_editor_single_line editor =
+  ignore (Js.Unsafe.fun_call(Js.Unsafe.js_expr "setEditorSingleLine") [|Js.Unsafe.inject editor|])
+
 let rec create_hist_table divid inps outs reset_fun step_fun =
   let div = by_id divid in
   (try Dom.removeChild div (by_id interp_hist_id) with _ -> ());
@@ -188,6 +191,22 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
   let get_row_input row : Dom_html.inputElement Js.t =
     let opt_get o = Js.Opt.get o (fun _ -> failwith "get_row_input") in
     opt_get (opt_get row##.lastChild)##.firstChild |> Js.Unsafe.coerce in
+
+  List.iter (fun (row, _) ->
+    let input_editor_div_id = Atom.fresh "input-editor" in
+    let input_editor_div = T.(div ~a:[a_id input_editor_div_id; a_class ["editor"; "editor-row"]] []) in
+    Dom.appendChild row (of_node input_editor_div);
+    let editor_struct = Ace.({
+      editor_div = by_id input_editor_div_id;
+      editor = Ace.edit (by_id input_editor_div_id);
+      marks = [];
+      keybinding_menu = false
+    }) in
+    set_editor_single_line editor_struct.editor;
+    Ace.set_mode editor_struct "ace/mode/lustre";
+    Ace.set_tab_size editor_struct 2;
+    ()
+  ) inprows;
 
   (* Get the input values. If they are not all available, raise *)
   let get_latest_inputs () =
@@ -233,11 +252,11 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
       let rec fill_inputs rows rows_values =
         match rows, rows_values with
           | [], [] -> ()
-          | (row_id, ischeckbox) :: trows, row_value :: trows_values ->
+          | (row, ischeckbox) :: trows, row_value :: trows_values ->
             if ischeckbox then
-              (get_row_input row_id)##.checked := Js.bool (row_value = "true")
+              (get_row_input row)##.checked := Js.bool (row_value = "true")
             else
-              (get_row_input row_id)##.value := Js.string row_value;
+              (get_row_input row)##.value := Js.string row_value;
             fill_inputs trows trows_values
           | _ -> ()
       in

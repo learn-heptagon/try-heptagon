@@ -136,6 +136,23 @@ button, a {
     flex-basis: 100%;
 }
 
+.editor-row {
+    width: 100px;
+    display: block;
+    height: 14px;
+}
+
+/*
+.editor-row .ace_gutter {
+    width: 0px;
+    display: none;
+}
+
+.editor-row .ace_scroller {
+    left: 0px;
+}
+*/
+
 .error-marker {
     background-color: rgba(255, 0, 0, 0.3);
     position: absolute;

@@ -38,6 +38,39 @@
                 source.connect(audioCtx.destination);
                 source.start();
             }
+
+            function setEditorSingleLine(editor) {
+                /* Previous implementation (which was not working)
+                editor.renderer.setShowGutter(false);
+                editor.setOption("maxLines", 1);
+                */
+
+                editor.setOptions({
+                    maxLines: 1,
+                    autoScrollEditorIntoView: true,
+                    highlightActiveLine: false,
+                    printMargin: false,
+                    showGutter: false,
+                });
+
+                // Remove newlines in pasted text
+                editor.on("paste", function(e) {
+                    e.text = e.text.replace(/[\r\n]+/g, " ");
+                });
+
+                // Safety measure to keep the cursor within the editor's visible bounds
+                editor.renderer.screenToTextCoordinates = function(x, y) {
+                    var pos = this.pixelToScreenCoordinates(x, y);
+                    return this.session.screenToDocumentPosition(
+                        Math.min(this.session.getScreenLength() - 1, Math.max(pos.row, 0)),
+                        Math.max(pos.column, 0)
+                    );
+                };
+
+                // Disable Enter and Shift-Enter keys
+                editor.commands.bindKey("Enter|Shift-Enter", "null")
+            }
+
         </script>
         <script src="tryhept.js"></script>
     </body>
