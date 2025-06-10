@@ -193,22 +193,40 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
     let opt_get o = Js.Opt.get o (fun _ -> failwith "get_row_input") in
     opt_get (opt_get row##.lastChild)##.firstChild |> Js.Unsafe.coerce in
 
+  let editors_structs = ref [] in
+
   (* Add an editor in order to enter an expression in Heptagon *)
-  List.iter (fun (row, _) ->
-    let input_editor_div_id = Atom.fresh "input-editor" in
-    let input_editor_div = T.(div ~a:[a_id input_editor_div_id; a_class ["editor"; "editor-row"]][]) in
-    Dom.appendChild row (of_node input_editor_div);
-    let editor_struct = Ace.({
-      editor_div = by_id input_editor_div_id;
-      editor = Ace.edit (by_id input_editor_div_id);
-      marks = [];
-      keybinding_menu = false
-    }) in
-    set_editor_single_line editor_struct.editor;
-    Ace.set_mode editor_struct "ace/mode/lustre";
-    Ace.set_tab_size editor_struct 2;
-    ()
-  ) inprows;
+  let add_editor list_of_couples =
+    List.iter (fun (row, _) ->
+      let input_editor_div_id = Atom.fresh "input-editor" in
+      let input_editor_div = T.(div ~a:[a_id input_editor_div_id; a_class ["editor"; "editor-row"]][]) in
+      Dom.appendChild row (of_node input_editor_div);
+      let editor_struct = Ace.({
+        editor_div = by_id input_editor_div_id;
+        editor = Ace.edit (by_id input_editor_div_id);
+        marks = [];
+        keybinding_menu = false
+      }) in
+      set_editor_single_line editor_struct.editor;
+      Ace.set_mode editor_struct "ace/mode/lustre";
+      Ace.set_tab_size editor_struct 2;
+      editors_structs := !editors_structs @ [editor_struct];
+      ()
+    ) list_of_couples in
+
+  add_editor inprows;
+
+  (*
+  let get_input_editor_struct row =
+    let rec find_editor_struct index rows =
+      match rows with
+        | [] -> failwith "get_input_editor"
+        | (r, _) :: _ when r = row -> List.nth !editors_structs index
+        | _ :: t -> find_editor_struct (index + 1) t
+    in
+    find_editor_struct 0 inprows
+  in
+  *)
 
   (* As we added a new cell for each row of inputs, we need to create a initial gap to correctly align the rows of inputs with the head row and the rows of outputs *)
   let add_empty_cell list_of_couples =
@@ -235,6 +253,22 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
         input##.disabled := Js.bool true
     ) inprows in
 
+  let disable_latest_inputs_editor_not_empty () =
+    List.iter2 (
+      fun (row, _) editor_struct ->
+        let input = get_row_input row in
+
+        let update_state () =
+          let editor_value = Js.to_string Ace.(editor_struct.editor##getValue) in
+          input##.disabled := Js.bool (editor_value <> "") in
+
+        update_state ();
+
+        Ace.(editor_struct.editor)##on (Js.string "change") (fun () ->
+          update_state ()
+        )
+    ) inprows !editors_structs in
+
   let get_row_output row =
     Js.Opt.get row##.lastChild (fun _ -> failwith "get_row_output") in
 
@@ -254,7 +288,10 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
     Dom.appendChild head (of_node (column_head !count));
     List.iter (fun (row, isbool) -> Dom.appendChild row (of_node (input_cell isbool))) inprows;
     List.iter (fun (row, isbool) -> Dom.appendChild row (of_node (output_cell isbool))) outrows;
-    count := !count + 1
+    count := !count + 1;
+
+    (* WARNING: Activate previous cells *)
+    disable_latest_inputs_editor_not_empty ()
   in
 
   (* Restore previously saved inputs and display them in the table. That ensures that the table is not graphically reset at each new compilation (unless the number of entries or the type of even a single entry changes). *)
