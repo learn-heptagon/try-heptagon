@@ -79,6 +79,7 @@ let parse_loc_message text =
   (r1, r2), (c1, c2)
 
 let print_error editor text =
+  print_endline text;
   try
     let (row, col) = parse_loc_message text in
     add_error_marker editor row col
@@ -254,7 +255,7 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
           let editor_value = Ace.get_contents editor_struct in
           try
             let lexbuf = Lexing.from_string editor_value in
-            let ast = Hept_parser_scoper.parse Hept_parser.exp lexbuf in
+            let ast = Hept_parser_scoper.parse Hept_parser.inline_exp lexbuf in
             ()
           with Errors.Error -> ()
         );
