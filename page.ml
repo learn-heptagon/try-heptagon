@@ -3,6 +3,7 @@
 open Js_of_ocaml
 open Js_of_ocaml_tyxml
 module T = Tyxml_js.Html5
+open Ezjs_ace
 
 let by_id s = Dom_html.getElementById s
 let of_node = Tyxml_js.To_dom.of_node
@@ -58,6 +59,42 @@ module Console = struct
       Js.Opt.iter (console##.firstChild) (fun c -> Dom.removeChild console c)
     done
 end
+
+(** The next four functions are transferred from tryhept.ml **)
+
+(** Show an error with [text] at [loc] in the console as well as the editor *)
+let add_error_marker (editor : unit Ace.editor) (r1, r2) (c1, c2) =
+  let open Ace in let open Ace_types in
+  (* Printf.fprintf stdout "%d:%d, %d:%d\n" r1 c1 r2 c2; *)
+  let range = Ace.range (r1-1) c1 (r2-1) c2 in
+  ignore (editor.editor##getSession##addMarker range
+            (Js.string "error-marker") (Js.string "text") (Js.bool true))
+
+let parse_loc_message text =
+  let reg = Str.regexp "File \"\", line \\([0-9]+\\)-?\\([0-9]+\\)?, characters \\([0-9]+\\)-\\([0-9]+\\):" in
+  if not (Str.string_match reg text 0) then invalid_arg "parse_loc_message";
+  let r1 = int_of_string (Str.matched_group 1 text) in
+  let r2 = try int_of_string (Str.matched_group 2 text) with _ -> r1 in
+  let c1 = int_of_string (Str.matched_group 3 text) and c2 = int_of_string (Str.matched_group 4 text) in
+  (r1, r2), (c1, c2)
+
+let print_error editor text =
+  try
+    let (row, col) = parse_loc_message text in
+    add_error_marker editor row col
+  with _ ->
+    if text <> "\n" then Console.error text
+
+(** Reset the editor *)
+let reset_editor (editor: unit Ace.editor) =
+  Ace.clear_marks editor;
+
+  let markers = editor.editor##getSession##getMarkers (Js.bool true) in
+  let markers = Js.Unsafe.global##._Object##keys markers in
+  let markers = Js.to_array markers in
+    Array.iter (fun m -> editor.editor##getSession##removeMarker m) markers;
+
+  Console.clear ()
 
 (** Generation of fresh variables *)
 module Atom = struct
@@ -195,7 +232,7 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
 
   let editors_structs = ref [] in
 
-  (* Add an editor in order to enter an expression in Heptagon *)
+  (* Add an editor in order to put an expression in Heptagon *)
   let add_editor list_of_couples =
     List.iter (fun (row, _) ->
       let input_editor_div_id = Atom.fresh "input-editor" in
@@ -210,6 +247,17 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
       set_editor_single_line editor_struct.editor;
       Ace.set_mode editor_struct "ace/mode/lustre";
       Ace.set_tab_size editor_struct 2;
+
+      Ace.(editor_struct.editor)##on (Js.string "change") (fun () ->
+          Sys_js.set_channel_flusher stderr (fun e -> print_error editor_struct e);
+          reset_editor editor_struct;
+          let editor_value = Ace.get_contents editor_struct in
+          try
+            let lexbuf = Lexing.from_string editor_value in
+            let ast = Hept_parser_scoper.parse Hept_parser.exp lexbuf in
+            ()
+          with Errors.Error -> ()
+        );
       editors_structs := !editors_structs @ [editor_struct];
       ()
     ) list_of_couples in
