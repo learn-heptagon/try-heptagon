@@ -122,8 +122,6 @@ type control =
   | Button of (unit -> unit)
   | Checkbox of (bool ref)
 
-open Ezjs_ace
-
 type ace_panel = {
   ptype: panel_type;
   controls: (string * control) list;
@@ -255,8 +253,12 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
           let editor_value = Ace.get_contents editor_struct in
           try
             let lexbuf = Lexing.from_string editor_value in
-            let ast = Hept_parser_scoper.parse Hept_parser.inline_exp lexbuf in
-            ()
+            let program = Compil.build_program lexbuf in
+            match program with
+              | Some p ->
+                let obc_program = Compil.compile_program "main" p in
+                ()
+              | None -> ()
           with Errors.Error -> ()
         );
       editors_structs := !editors_structs @ [editor_struct];

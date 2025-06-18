@@ -10,6 +10,7 @@ FLAGS=-use-ocamlfind -Is heptagon/compiler/ \
 
 SRC := \
 	examples.ml \
+	compil.ml \
 	page.ml \
 	simul.ml interp.ml \
 	tryhept.ml \
