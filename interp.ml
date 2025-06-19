@@ -100,11 +100,6 @@ let string_of_value = function
 
 let stop_fun = ref (fun _ -> ())
 
-let is_boolean_type =
-  Types.(function
-         | Tid { name = "bool" } -> true
-         | _ -> false)
-
 let load_interp (panelid : string) (prog: Obc.program) int =
   !stop_fun ();
   let editorid = panelid^"-editor" in
@@ -131,8 +126,8 @@ let load_interp (panelid : string) (prog: Obc.program) int =
             in
 
             Page.create_hist_table editorid
-              (List.map (fun vd -> Idents.source_name vd.v_ident, is_boolean_type vd.v_type) met.m_inputs)
-              (List.map (fun vd -> Idents.source_name vd.v_ident, is_boolean_type vd.v_type) met.m_outputs)
+              (List.map (fun vd -> Page.{ var_name = Idents.source_name vd.v_ident; var_type = vd.v_type; var_type_ast = Hept_scoping2.translate_into_hept_parsetree_ty vd.v_type }) met.m_inputs)
+              (List.map (fun vd -> Page.{ var_name = Idents.source_name vd.v_ident; var_type = vd.v_type; var_type_ast = Hept_scoping2.translate_into_hept_parsetree_ty vd.v_type }) met.m_outputs)
               reset_fun step_fun;
             ())
      with _ -> ())

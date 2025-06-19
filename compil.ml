@@ -51,14 +51,14 @@ let compile_program modname p =
   Mls2seq.write_obc_file p;
   close_all (); p
 
-let build_program lexbuf =
+let build_program lexbuf var_name var_type =
   let ast = Hept_parser_scoper.parse Hept_parser.inline_exp lexbuf in
   let location = ast.e_loc in
-  let var_name = "y" in
+  let dec_name = String.capitalize_ascii var_name in
 
   let var_dec : Hept_parsetree.var_dec = {
     v_name = var_name;
-    v_type = Tid (Q (Names.qualname_of_string "id"));
+    v_type = var_type;
     v_linearity = Linearity.Ltop;
     v_clock = None;
     v_last = Var;
@@ -75,8 +75,6 @@ let build_program lexbuf =
     b_equs = [eq];
     b_loc = location;
   } in
-
-  let dec_name = "main" in
 
   let node_dec : Hept_parsetree.node_dec = {
     n_name = dec_name;
@@ -97,6 +95,9 @@ let build_program lexbuf =
     p_desc = [Pnode node_dec];
   } in
 
-  let program = Hept_scoping.translate_program parsetree_program in
+  let static_program = Hept_static_scoping.program parsetree_program in
 
+  let program = Hept_scoping.translate_program static_program in
+
+  Hept_printer.print stdout program;
   Some program

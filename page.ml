@@ -183,11 +183,24 @@ let clear_panels () =
 let interp_hist_id = "interpreter-hist"
 
 let column_head n = T.(th [txt (string_of_int n)])
+
+type var_info = {
+  var_name : string;
+  var_type : Types.ty;
+  var_type_ast : Hept_parsetree.ty;
+}
+
+let is_boolean_type =
+  Types.(function
+         | Tid { name = "bool" } -> true
+         | _ -> false)
+
 let input_cell isbool =
   T.(td [if isbool then input ~a:[a_input_type `Checkbox] ()
          else input ~a:[a_class ["history"]] ()]
        ~a:[a_class ["history"]])
-let output_cell isbool = T.(td [] ~a:[a_class ["history"]])
+
+let output_cell = T.(td [] ~a:[a_class ["history"]])
 
 let saved_inputs = ref []
 let saved_inps = ref []
@@ -203,15 +216,16 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
   let hhead = T.(tr ~a:[a_id headid] [th [txt ""]]) in
 
   let make_first_column =
-    List.map (fun (s, isbool) ->
+    List.map (fun v ->
       let rowid = Atom.fresh "row" in
-      rowid, isbool, T.(tr ~a:[a_id rowid] [th [txt s; txt " = "]]))
+      let isbool = is_boolean_type v.var_type in
+      rowid, isbool, T.(tr ~a:[a_id rowid] [th [txt v.var_name; txt " = "]]))
   in
 
   let hins = make_first_column inps and houts = make_first_column outs in
 
   (* Reset the saved inputs list if the saved inputs have changed (ignoring changes in names) *)
-  if List.map snd !saved_inps <> List.map snd inps then saved_inputs := [];
+  if List.map (fun v -> v.var_type) !saved_inps <> List.map (fun v -> v.var_type) inps then saved_inputs := [];
   saved_inps := inps;
 
   let tabl = T.(table ~a:[] (hhead::List.map (fun (_, _, x) -> x) (hins@houts))) in
@@ -232,8 +246,8 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
   let editors_structs = ref [] in
 
   (* Add an editor in order to put an expression in Heptagon *)
-  let add_editor list_of_couples =
-    List.iter (fun (row, _) ->
+  let add_editor list_of_couples list_of_var_info =
+    List.iter2 (fun (row, _) v ->
       let input_editor_div_id = Atom.fresh "input-editor" in
       let input_editor_div = T.(div ~a:[a_id input_editor_div_id; a_class ["editor"; "editor-row"]][]) in
       Dom.appendChild row (of_node input_editor_div);
@@ -253,7 +267,7 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
           let editor_value = Ace.get_contents editor_struct in
           try
             let lexbuf = Lexing.from_string editor_value in
-            let program = Compil.build_program lexbuf in
+            let program = Compil.build_program lexbuf v.var_name v.var_type_ast in
             match program with
               | Some p ->
                 let obc_program = Compil.compile_program "main" p in
@@ -261,28 +275,17 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
               | None -> ()
           with Errors.Error -> ()
         );
+
       editors_structs := !editors_structs @ [editor_struct];
       ()
-    ) list_of_couples in
+    ) list_of_couples list_of_var_info in
 
-  add_editor inprows;
-
-  (*
-  let get_input_editor_struct row =
-    let rec find_editor_struct index rows =
-      match rows with
-        | [] -> failwith "get_input_editor"
-        | (r, _) :: _ when r = row -> List.nth !editors_structs index
-        | _ :: t -> find_editor_struct (index + 1) t
-    in
-    find_editor_struct 0 inprows
-  in
-  *)
+  add_editor inprows inps;
 
   (* As we added a new cell for each row of inputs, we need to create a initial gap to correctly align the rows of inputs with the head row and the rows of outputs *)
   let add_empty_cell list_of_couples =
     List.iter (fun (row, isbool) ->
-      Dom.appendChild row (of_node (output_cell isbool))
+      Dom.appendChild row (of_node output_cell)
   ) list_of_couples in
 
   add_empty_cell [(head, false)];
@@ -338,7 +341,7 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
   let add_column () =
     Dom.appendChild head (of_node (column_head !count));
     List.iter (fun (row, isbool) -> Dom.appendChild row (of_node (input_cell isbool))) inprows;
-    List.iter (fun (row, isbool) -> Dom.appendChild row (of_node (output_cell isbool))) outrows;
+    List.iter (fun (row, isbool) -> Dom.appendChild row (of_node output_cell)) outrows;
     count := !count + 1;
 
     (* WARNING: Activate previous cells *)
