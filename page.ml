@@ -200,7 +200,7 @@ let input_cell isbool =
          else input ~a:[a_class ["history"]] ()]
        ~a:[a_class ["history"]])
 
-let output_cell = T.(td [] ~a:[a_class ["history"]])
+let output_cell isbool = T.(td [] ~a:[a_class ["history"]])
 
 let saved_inputs = ref []
 let saved_inps = ref []
@@ -285,7 +285,7 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
   (* As we added a new cell for each row of inputs, we need to create a initial gap to correctly align the rows of inputs with the head row and the rows of outputs *)
   let add_empty_cell list_of_couples =
     List.iter (fun (row, isbool) ->
-      Dom.appendChild row (of_node output_cell)
+      Dom.appendChild row (of_node (output_cell isbool))
   ) list_of_couples in
 
   add_empty_cell [(head, false)];
@@ -341,10 +341,10 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
   let add_column () =
     Dom.appendChild head (of_node (column_head !count));
     List.iter (fun (row, isbool) -> Dom.appendChild row (of_node (input_cell isbool))) inprows;
-    List.iter (fun (row, isbool) -> Dom.appendChild row (of_node output_cell)) outrows;
+    List.iter (fun (row, isbool) -> Dom.appendChild row (of_node (output_cell isbool))) outrows;
     count := !count + 1;
 
-    (* WARNING: Activate previous cells *)
+    (* WARNING: Still activate previous cells *)
     disable_latest_inputs_editor_not_empty ()
   in
 
