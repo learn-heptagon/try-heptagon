@@ -91,13 +91,6 @@ let parse_input typ s =
       | _ -> failwith "TODO"
   with _ -> raise (ParseInputError s)
 
-let string_of_value = function
-  | Vbool b -> if b then "true" else "false"
-  | Vint i -> string_of_int i
-  | Vfloat f -> string_of_float f
-  | Vconstructor c -> c.name
-  | Vundef -> "."
-
 let stop_fun = ref (fun _ -> ())
 
 let load_interp (panelid : string) (prog: Obc.program) int =
@@ -122,12 +115,26 @@ let load_interp (panelid : string) (prog: Obc.program) int =
               (* Obc_printer.print_prog Format.std_formatter prog; *)
               let (outputs, new_mem) = Obc_interp.step prog cname inputs !mem in
               mem := new_mem;
-              List.map string_of_value outputs
+              List.map Page.string_of_value outputs
             in
 
             Page.create_hist_table editorid
-              (List.map (fun vd -> Page.{ var_name = Idents.source_name vd.v_ident; var_type = vd.v_type; var_type_ast = Hept_scoping2.translate_into_hept_parsetree_ty vd.v_type }) met.m_inputs)
-              (List.map (fun vd -> Page.{ var_name = Idents.source_name vd.v_ident; var_type = vd.v_type; var_type_ast = Hept_scoping2.translate_into_hept_parsetree_ty vd.v_type }) met.m_outputs)
+              (List.map (fun vd ->
+                Page.{
+                  var_name = Idents.source_name vd.v_ident;
+                  var_type = vd.v_type;
+                  var_type_ast = Hept_scoping2.translate_into_hept_parsetree_ty vd.v_type;
+                  reset_fun = None;
+                  step_fun = None }
+              ) met.m_inputs)
+              (List.map (fun vd ->
+                Page.{
+                  var_name = Idents.source_name vd.v_ident;
+                  var_type = vd.v_type;
+                  var_type_ast = Hept_scoping2.translate_into_hept_parsetree_ty vd.v_type;
+                  reset_fun = None;
+                  step_fun = None }
+              ) met.m_outputs)
               reset_fun step_fun;
             ())
      with _ -> ())

@@ -51,7 +51,28 @@ let compile_program modname p =
   Mls2seq.write_obc_file p;
   close_all (); p
 
-let build_program lexbuf var_name var_type =
+let reset_genv () =
+  Modules.(
+    g_env.current_mod <- Module "";
+    g_env.opened_mod <- [];
+    g_env.loaded_mod <- [];
+    g_env.values <- Names.QualEnv.empty;
+    g_env.types <- Names.QualEnv.empty;
+    g_env.constrs <- Names.QualEnv.empty;
+    g_env.fields <- Names.QualEnv.empty;
+    g_env.consts <- Names.QualEnv.empty
+  )
+
+let prepare_module () =
+  reset_genv ();
+
+  let modname = "tryhept" in
+  let modul = Names.modul_of_string modname in
+  Initial.initialize modul;
+  modname
+  (* compile_program modname source *)
+
+let build_input_program lexbuf var_name var_type =
   let ast = Hept_parser_scoper.parse Hept_parser.inline_exp lexbuf in
   let location = ast.e_loc in
   let dec_name = String.capitalize_ascii var_name in
@@ -78,7 +99,7 @@ let build_program lexbuf var_name var_type =
 
   let node_dec : Hept_parsetree.node_dec = {
     n_name = dec_name;
-    n_stateful = false;
+    n_stateful = true;
     n_unsafe = false;
     n_input = [];
     n_output = [var_dec];
@@ -90,7 +111,7 @@ let build_program lexbuf var_name var_type =
   } in
 
   let parsetree_program : Hept_parsetree.program = {
-    p_modname = dec_name;
+    p_modname = prepare_module ();
     p_opened = [];
     p_desc = [Pnode node_dec];
   } in
@@ -100,4 +121,4 @@ let build_program lexbuf var_name var_type =
   let program = Hept_scoping.translate_program static_program in
 
   Hept_printer.print stdout program;
-  Some program
+  program

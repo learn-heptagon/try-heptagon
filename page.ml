@@ -60,7 +60,7 @@ module Console = struct
     done
 end
 
-(** The next four functions are transferred from tryhept.ml **)
+(** The next four functions are transferred from tryhept.ml *)
 
 (** Show an error with [text] at [loc] in the console as well as the editor *)
 let add_error_marker (editor : unit Ace.editor) (r1, r2) (c1, c2) =
@@ -184,17 +184,6 @@ let interp_hist_id = "interpreter-hist"
 
 let column_head n = T.(th [txt (string_of_int n)])
 
-type var_info = {
-  var_name : string;
-  var_type : Types.ty;
-  var_type_ast : Hept_parsetree.ty;
-}
-
-let is_boolean_type =
-  Types.(function
-         | Tid { name = "bool" } -> true
-         | _ -> false)
-
 let input_cell isbool =
   T.(td [if isbool then input ~a:[a_input_type `Checkbox] ()
          else input ~a:[a_class ["history"]] ()]
@@ -202,11 +191,41 @@ let input_cell isbool =
 
 let output_cell isbool = T.(td [] ~a:[a_class ["history"]])
 
+(** Additions *)
+
+(** The next two functions are transferred from interp.ml *)
+
+let rec string_of_value value =
+  match value with
+    | Obc_interp.Vbool b -> Bool.to_string b
+    | Obc_interp.Vint i -> string_of_int i
+    | Obc_interp.Vfloat f -> string_of_float f
+    | Obc_interp.Vconstructor c -> c.name
+    | Obc_interp.Varray a ->
+        let elements = List.map string_of_value (Array.to_list a) in
+        "[" ^ (String.concat ", " elements) ^ "]"
+    | Obc_interp.Vundef -> "."
+
+let is_boolean_type =
+  Types.(function
+         | Tid { name = "bool" } -> true
+         | _ -> false)
+
+type var_info = {
+  var_name : string;
+  var_type : Types.ty;
+  var_type_ast : Hept_parsetree.ty;
+  mutable reset_fun : (unit -> unit) option;
+  mutable step_fun : (unit -> Obc_interp.value) option;
+}
+
 let saved_inputs = ref []
 let saved_inps = ref []
 
 let set_editor_single_line editor =
   ignore (Js.Unsafe.fun_call(Js.Unsafe.js_expr "setEditorSingleLine") [|Js.Unsafe.inject editor|])
+
+(** Function to create a history table *)
 
 let rec create_hist_table divid inps outs reset_fun step_fun =
   let div = by_id divid in
@@ -218,8 +237,7 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
   let make_first_column =
     List.map (fun v ->
       let rowid = Atom.fresh "row" in
-      let isbool = is_boolean_type v.var_type in
-      rowid, isbool, T.(tr ~a:[a_id rowid] [th [txt v.var_name; txt " = "]]))
+      v, rowid, T.(tr ~a:[a_id rowid] [th [txt v.var_name; txt " = "]]))
   in
 
   let hins = make_first_column inps and houts = make_first_column outs in
@@ -236,8 +254,8 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
 
   (* Get the parts of the table *)
   let head = by_id headid
-  and inprows = List.map (fun (id, isbool, _) -> by_id id, isbool) hins
-  and outrows = List.map (fun (id, isbool, _) -> by_id id, isbool) houts in
+  and inprows = List.map (fun (v, id, _) -> v, by_id id) hins
+  and outrows = List.map (fun (v, id, _) -> v, by_id id) houts in
 
   let get_row_input row : Dom_html.inputElement Js.t =
     let opt_get o = Js.Opt.get o (fun _ -> failwith "get_row_input") in
@@ -246,8 +264,8 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
   let editors_structs = ref [] in
 
   (* Add an editor in order to put an expression in Heptagon *)
-  let add_editor list_of_couples list_of_var_info =
-    List.iter2 (fun (row, _) v ->
+  let add_editor list_of_couples =
+    List.iter (fun (v, row) ->
       let input_editor_div_id = Atom.fresh "input-editor" in
       let input_editor_div = T.(div ~a:[a_id input_editor_div_id; a_class ["editor"; "editor-row"]][]) in
       Dom.appendChild row (of_node input_editor_div);
@@ -267,49 +285,55 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
           let editor_value = Ace.get_contents editor_struct in
           try
             let lexbuf = Lexing.from_string editor_value in
-            let program = Compil.build_program lexbuf v.var_name v.var_type_ast in
-            match program with
-              | Some p ->
-                let obc_program = Compil.compile_program "main" p in
-                ()
-              | None -> ()
+            let program = Compil.build_input_program lexbuf v.var_name v.var_type_ast in
+            let obc_program = Compil.compile_program "main" program in
+            match obc_program.p_desc with
+              | [Pclass cls] ->
+                let mem = ref (Obc_interp.reset obc_program cls.cd_name.name) in
+                v.reset_fun <- Some (fun () ->
+                  mem := Obc_interp.reset obc_program cls.cd_name.name);
+                v.step_fun <- Some (fun () ->
+                  let inputs = [] in
+                  let (outputs, new_mem) = Obc_interp.step obc_program cls.cd_name.name inputs !mem in
+                  mem := new_mem;
+                  List.hd outputs)
+              | _ -> ()
           with Errors.Error -> ()
         );
 
       editors_structs := !editors_structs @ [editor_struct];
       ()
-    ) list_of_couples list_of_var_info in
+    ) list_of_couples in
 
-  add_editor inprows inps;
+  add_editor inprows;
 
   (* As we added a new cell for each row of inputs, we need to create a initial gap to correctly align the rows of inputs with the head row and the rows of outputs *)
-  let add_empty_cell list_of_couples =
-    List.iter (fun (row, isbool) ->
-      Dom.appendChild row (of_node (output_cell isbool))
-  ) list_of_couples in
+  let add_empty_cell () =
+    Dom.appendChild head (of_node T.(th [txt ""]));
+    List.iter (fun (v, row) -> Dom.appendChild row (of_node (output_cell (is_boolean_type v.var_type)))) outrows
+  in
 
-  add_empty_cell [(head, false)];
-  add_empty_cell outrows;
+  add_empty_cell ();
 
   (* Get the input values. If they are not all available, raise *)
   let get_latest_inputs () =
     List.map (
-      fun (row, ischeckbox) ->
+      fun (v, row) ->
         let input = get_row_input row in
-        if ischeckbox then if Js.to_bool input##.checked then "true" else "false"
+        if is_boolean_type v.var_type then if Js.to_bool input##.checked then "true" else "false"
         else input##.value |> Js.to_string
     ) inprows in
 
   let disable_latest_inputs () =
     List.iter (
-      fun (row, _) ->
+      fun (_, row) ->
         let input = get_row_input row in
         input##.disabled := Js.bool true
     ) inprows in
 
   let disable_latest_inputs_editor_not_empty () =
     List.iter2 (
-      fun (row, _) editor_struct ->
+      fun (_, row) editor_struct ->
         let input = get_row_input row in
 
         let update_state () =
@@ -328,10 +352,10 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
 
   let set_latest_outputs output =
     List.iter2 (
-      fun (row, ischeckbox) s ->
+      fun (v, row) s ->
         let cell = get_row_output row in
         Dom.appendChild cell
-          (of_node T.(if ischeckbox
+          (of_node T.(if is_boolean_type v.var_type
                       then input ~a:([a_input_type `Checkbox; a_disabled ()]@(if s = "true" then [a_checked ()] else [])) ()
                       else txt s))
     ) outrows output in
@@ -340,8 +364,21 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
   let count = ref 1 in
   let add_column () =
     Dom.appendChild head (of_node (column_head !count));
-    List.iter (fun (row, isbool) -> Dom.appendChild row (of_node (input_cell isbool))) inprows;
-    List.iter (fun (row, isbool) -> Dom.appendChild row (of_node (output_cell isbool))) outrows;
+    List.iter (fun (v, row) -> Dom.appendChild row (of_node (input_cell (is_boolean_type v.var_type)))) inprows;
+    List.iter (fun (v, row) -> Dom.appendChild row (of_node (output_cell (is_boolean_type v.var_type)))) outrows;
+
+    List.iter (fun (v, row) ->
+      match v.step_fun with
+        | Some step_function ->
+          let result = step_function () in
+          let cell = get_row_output row in
+          Dom.appendChild cell
+            (of_node T.(if is_boolean_type v.var_type
+                        then input ~a:([a_input_type `Checkbox; a_disabled ()]@(if string_of_value result = "true" then [a_checked ()] else [])) ()
+                        else txt (string_of_value result)))
+        | None -> ()
+    ) outrows;
+
     count := !count + 1;
 
     (* WARNING: Still activate previous cells *)
@@ -352,15 +389,15 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
   let restore_saved_inputs () =
     List.iter (fun inputs ->
       add_column ();
-      let rec fill_inputs rows rows_values =
-        match rows, rows_values with
+      let rec fill_inputs list_of_couples list_of_values =
+        match list_of_couples, list_of_values with
           | [], [] -> ()
-          | (row, ischeckbox) :: trows, row_value :: trows_values ->
-            if ischeckbox then
+          | (v, row) :: t1, row_value :: t2 ->
+            if is_boolean_type v.var_type then
               (get_row_input row)##.checked := Js.bool (row_value = "true")
             else
               (get_row_input row)##.value := Js.string row_value;
-            fill_inputs trows trows_values
+            fill_inputs t1 t2
           | _ -> ()
       in
       fill_inputs inprows inputs;
