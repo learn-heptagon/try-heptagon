@@ -30,6 +30,15 @@ let clear_div divid =
   let children = Dom.list_of_nodeList div##.childNodes in
   List.iter (fun n -> Dom.removeChild div n) children
 
+let rec drop l i =
+  if i = 0 then l else drop (List.tl l) (i - 1)
+
+let clear_div_from divid i =
+  let div = by_id divid in
+  let children = Dom.list_of_nodeList div##.childNodes in
+  let children = drop children i in
+  List.iter (fun n -> Dom.removeChild div n) children
+
 let remove_first_child divid =
   let div = by_id divid in
   let children = Dom.list_of_nodeList div##.childNodes in
@@ -194,57 +203,135 @@ let input_cell isbool =
          else input ~a:[a_class ["history"]] ()]
        ~a:[a_class ["history"]])
 
-let output_cell isbool = T.(td [] ~a:[a_class ["history"]])
+open Chronogram
 
-(** The next two functions are transferred from interp.ml *)
-
-let rec string_of_value value =
-  match value with
-    | Obc_interp.Vbool b -> Bool.to_string b
-    | Obc_interp.Vint i -> string_of_int i
-    | Obc_interp.Vfloat f -> string_of_float f
-    | Obc_interp.Vconstructor c -> c.name
-    | Obc_interp.Varray a ->
-        let elements = List.map string_of_value (Array.to_list a) in
-        "[" ^ (String.concat ", " elements) ^ "]"
-    | Obc_interp.Vundef -> "."
+let output_cell isbool v =
+  T.(td [if isbool
+         then input ~a:([a_input_type `Checkbox; a_disabled ()]@(if v = Obc_interp.Vbool true then [a_checked ()] else [])) ()
+         else input ~a:[a_class ["history"]; a_disabled (); a_value (string_of_value v)] ()]
+       ~a:[a_class ["history"]])
 
 let is_boolean_type =
   Types.(function
          | Tid { name = "bool" } -> true
          | _ -> false)
 
-type input_editor_info = {
-  reset_fun : unit -> unit;
-  step_fun : unit -> Obc_interp.value;
-  saved_expression : string;
-}
-
-type input_info =
-  | Value_from_editor of input_editor_info
-  | Manual_value of string list
-
-type inprow_info = {
-  var_name : string;
-  var_type : Types.ty;
-  mutable var_input : input_info;
-}
-
-let saved_inprows = ref []
-
 let set_editor_single_line editor =
   ignore (Js.Unsafe.fun_call(Js.Unsafe.js_expr "setEditorSingleLine") [|Js.Unsafe.inject editor|])
 
-let rec create_hist_table divid inps outs reset_fun step_fun =
-  print_endline "create_hist_table";
+let show_chronogram_values hins houts =
+
+    (* Dom.appendChild (by_id headid) (of_node (column_head st.column_nb)); *)
+
+    let show_values row isbool values =
+      List.iter (fun v ->
+          let cell = output_cell isbool v in
+          Dom.appendChild row (of_node cell);
+        ) values
+    in
+
+    List.iter (fun (info, rowid) ->
+        clear_div_from rowid 2;
+        show_values (by_id rowid) (is_boolean_type info.row.var_type) info.row.var_values
+      (* let row = by_id rowid in *)
+      (* Dom.appendChild row (of_node (input_cell (is_boolean_type info.row.var_type))); *)
+      (* let input = get_row_input row in *)
+      (* match info.editor with *)
+      (* | Some editor_info -> *)
+      (*   let result = editor_info.step_fun () in *)
+      (*   input##.disabled := Js.bool true; *)
+      (*   if is_boolean_type info.row.var_type then *)
+      (*     input##.checked := Js.bool (result = Vbool true) *)
+      (*   else *)
+      (*     input##.value := Js.string (string_of_value result) *)
+      (* | None -> () *)
+      ) hins;
+
+    List.iter (fun (info, rowid) ->
+        clear_div_from rowid 2;
+        show_values (by_id rowid) (is_boolean_type info.var_type) info.var_values
+      ) houts;
+
+    (* add final column *)
+    List.iter (fun (info, rowid) ->
+        (* TODO if non-empty editor, step and write the value in the cell *)
+        let cell = input_cell (is_boolean_type info.row.var_type) in
+        Dom.appendChild (by_id rowid) (of_node cell)
+      ) hins
+
+let create_input_editor info rowid =
+  let input_editor_div_id = Atom.fresh "input-editor" in
+  let input_editor_div = T.(div ~a:[a_id input_editor_div_id; a_class ["editor"; "editor-row"]][]) in
+  Dom.appendChild (by_id rowid) (of_node input_editor_div);
+
+  let editor_struct =
+    Ace.({
+            editor_div = by_id input_editor_div_id;
+            editor = Ace.edit (by_id input_editor_div_id);
+            marks = [];
+            keybinding_menu = false
+    }) in
+  set_editor_single_line editor_struct.editor;
+  Ace.set_mode editor_struct "ace/mode/lustre";
+  Ace.set_tab_size editor_struct 2;
+  (match info.editor with
+  | Some editor_info ->
+    (* editor_info.reset_fun (); *)
+    editor_struct.editor##setValue (Js.string editor_info.saved_expression)
+  | None -> ());
+
+  Ace.(editor_struct.editor)##on (Js.string "change") (fun () ->
+      Sys_js.set_channel_flusher stderr (fun e -> print_error editor_struct e);
+      reset_editor editor_struct;
+      let editor_value = Ace.get_contents editor_struct in
+      (* TODO special case when the string is empty, set info.editor back to None *)
+      try
+        let lexbuf = Lexing.from_string editor_value in
+        let program = Compil.build_input_program lexbuf
+                        info.row.var_name
+                        (Hept_scoping2.translate_into_hept_parsetree_ty info.row.var_type)
+        in
+        let obc_program = Compil.compile_program "main" program in
+        match obc_program.p_desc with
+        | [Pclass cls] ->
+          let mem = ref (Obc_interp.reset obc_program cls.cd_name.name) in
+          info.editor <- Some
+                           { reset_fun = (fun () ->
+                               mem := Obc_interp.reset obc_program cls.cd_name.name);
+                             step_fun = (fun () ->
+                               let inputs = [] in
+                               let (outputs, new_mem) = Obc_interp.step obc_program cls.cd_name.name inputs !mem in
+                               mem := new_mem;
+                               List.hd outputs);
+                             saved_expression = editor_value };
+          (* reset_hist_table houts *)
+          ()
+        | _ -> ()
+      with Errors.Error -> ()
+    )
+
+let rec show_chronogram divid (st: Chronogram.t) reset_fun step_fun =
 
   let headid = "hist-head" in
-  let make_first_column =
-    List.mapi (fun i (v_name, v_type) ->
-      let rowid = "row" ^ string_of_int i in
-      rowid, v_name, v_type, T.(tr ~a:[a_id rowid] [th [txt v_name; txt " = "]]))
-  in
-  let hins = make_first_column inps and houts = make_first_column outs in
+
+  let hins = List.map (fun info -> info, Atom.fresh "row") st.inputs
+  and houts = List.map (fun row -> row, Atom.fresh "row") st.outputs in
+
+  let hhead = T.(tr ~a:[a_id headid] [th [txt ""]; th [txt ""]]) in
+  let tabl = T.(table ~a:[]
+                  (hhead
+                   :: List.map (fun (info, rowid) -> T.(tr ~a:[a_id rowid] [th [txt info.row.var_name; txt " = "]])) hins
+                   @  List.map (fun (info, rowid) -> T.(tr ~a:[a_id rowid] [th [txt info.var_name; txt " = "]; th [txt ""]])) houts)) in
+
+  let div = by_id divid in
+  (try Dom.removeChild div (by_id interp_hist_id) with _ -> ());
+
+  (* This is where the DOM elements of the table are created *)
+  let interp_div = of_node T.(div ~a:[a_id interp_hist_id] [tabl]) in
+  Dom.appendChild div interp_div;
+
+  (* Add editors in order to put an expression in Heptagon *)
+  List.iter (fun (info, rowid) -> create_input_editor info rowid) hins;
 
   let get_row_input row : Dom_html.inputElement Js.t =
     let opt_get o = Js.Opt.get o (fun _ -> failwith "get_row_input") in
@@ -253,108 +340,74 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
   (* Get the input values. If they are not all available, raise *)
   let get_latest_inputs () =
     List.map (
-      fun (row, info) ->
-        let input = get_row_input row in
-        if is_boolean_type info.var_type then if Js.to_bool input##.checked then "true" else "false"
+      fun (info, rowid) ->
+        let input = get_row_input (by_id rowid) in
+        if is_boolean_type info.row.var_type then if Js.to_bool input##.checked then "true" else "false"
         else input##.value |> Js.to_string
-    ) !saved_inprows in
+    ) hins in
 
-  let disable_latest_inputs () =
-    List.iter (
-      fun (row, _) ->
-        let input = get_row_input row in
-        input##.disabled := Js.bool true
-    ) !saved_inprows in
+(*   let get_row_output row = *)
+(*     Js.Opt.get row##.lastChild (fun _ -> failwith "get_row_output") in *)
 
-  let get_row_output row =
-    Js.Opt.get row##.lastChild (fun _ -> failwith "get_row_output") in
+(*   let set_latest_outputs houts output = *)
+(*     List.iter2 ( *)
+(*       fun (rowid, _, v_type, _) s -> *)
+(*         let cell = get_row_output (by_id rowid) in *)
+(*         Dom.appendChild cell *)
+(*           (of_node T.(if is_boolean_type v_type *)
+(*                       then input ~a:([a_input_type `Checkbox; a_disabled ()]@(if s = "true" then [a_checked ()] else [])) () *)
+(*                       else txt s)) *)
+(*     ) houts output in *)
 
-  let set_latest_outputs houts output =
-    List.iter2 (
-      fun (rowid, _, v_type, _) s ->
-        let cell = get_row_output (by_id rowid) in
-        Dom.appendChild cell
-          (of_node T.(if is_boolean_type v_type
-                      then input ~a:([a_input_type `Checkbox; a_disabled ()]@(if s = "true" then [a_checked ()] else [])) ()
-                      else txt s))
-    ) houts output in
+(*     (\* Restore previously saved inputs and display them in the table. That ensures that the table is not graphically reset at each new compilation (unless the number of entries or the type of even a single entry changes). *\) *)
+(* (\*    try *)
+(*       let inputs = get_latest_inputs () in *)
+(*       let restored_outputs = step_fun inputs in *)
+(*       set_latest_outputs restored_outputs; *)
+(*       disable_latest_inputs () *)
+(*     with e -> Console.error (Printexc.to_string e);*\) *)
+(* (\* *)
+(*     List.iter (fun (rowid, _, v_type, _) -> Dom.appendChild (by_id rowid) (of_node (output_cell (is_boolean_type v_type)))) houts;*\) *)
 
-  let column_number = ref 1 in
-  let add_column () =
-    Dom.appendChild (by_id headid) (of_node (column_head !column_number));
+(*     column_number := !column_number + 1 *)
+(*   in *)
 
-    List.iter (fun (row, info) ->
-      Dom.appendChild row (of_node (input_cell (is_boolean_type info.var_type)));
-      let input = get_row_input row in
-      match info.var_input with
-        | Value_from_editor editor_info ->
-          let result = editor_info.step_fun () in
-          input##.disabled := Js.bool true;
-          if is_boolean_type info.var_type then
-            input##.checked := Js.bool (result = Vbool true)
-          else
-            input##.value := Js.string (string_of_value result)
-        | Manual_value l -> ()
-          (* Restore previously saved inputs and display them in the table. That ensures that the table is not graphically reset at each new compilation (unless the number of entries or the type of even a single entry changes). *)
-(*          (match List.rev l with
-            | latest_value :: _ ->
-              if is_boolean_type info.var_type then
-                input##.checked := Js.bool (latest_value = "true")
-              else
-                input##.value := Js.string latest_value
-            | [] -> ()
-          );*)
-    ) !saved_inprows;
+(*   let reset_hist_table houts = *)
+(*     List.iter (fun (_, info) -> *)
+(*       match info.var_input with *)
+(*         | Value_from_editor _ -> () *)
+(*         | Manual_value _ -> info.var_input <- Manual_value [] *)
+(*     ) !saved_inprows; *)
 
-    (* Restore previously saved inputs and display them in the table. That ensures that the table is not graphically reset at each new compilation (unless the number of entries or the type of even a single entry changes). *)
-(*    try
-      let inputs = get_latest_inputs () in
-      let restored_outputs = step_fun inputs in
-      set_latest_outputs restored_outputs;
-      disable_latest_inputs ()
-    with e -> Console.error (Printexc.to_string e);*)
-(*
-    List.iter (fun (rowid, _, v_type, _) -> Dom.appendChild (by_id rowid) (of_node (output_cell (is_boolean_type v_type)))) houts;*)
+(*     let remove_children parent = *)
+(*       let children = parent##.childNodes in *)
+(*       while children##.length > 2 do *)
+(*         let child_to_remove = Js.Opt.get (children##item 2) (fun _ -> failwith "remove_children") in *)
+(*         parent##removeChild child_to_remove *)
+(*       done *)
+(*     in *)
+(*     remove_children (Js.Unsafe.coerce (by_id headid)); *)
+(*     List.iter (fun (row, _) -> remove_children (Js.Unsafe.coerce row)) !saved_inprows; *)
+(*     List.iter (fun (rowid, _, _, _) -> remove_children (by_id rowid)) houts; *)
 
-    column_number := !column_number + 1
-  in
-
-  let reset_hist_table houts =
-    List.iter (fun (_, info) ->
-      match info.var_input with
-        | Value_from_editor _ -> ()
-        | Manual_value _ -> info.var_input <- Manual_value []
-    ) !saved_inprows;
-
-    let remove_children parent =
-      let children = parent##.childNodes in
-      while children##.length > 2 do
-        let child_to_remove = Js.Opt.get (children##item 2) (fun _ -> failwith "remove_children") in
-        parent##removeChild child_to_remove
-      done
-    in
-    remove_children (Js.Unsafe.coerce (by_id headid));
-    List.iter (fun (row, _) -> remove_children (Js.Unsafe.coerce row)) !saved_inprows;
-    List.iter (fun (rowid, _, _, _) -> remove_children (by_id rowid)) houts;
-
-    column_number := 1;
-    add_column ()
-  in
+(*     column_number := 1; *)
+(*   in *)
 
   let step_button =
     T.(button ~a:[
       a_onclick (fun _ ->
         (try
           let inputs = get_latest_inputs () in
-          List.iter2 (fun (_, info) input ->
-            match info.var_input with
-              | Value_from_editor _ -> ()
-              | Manual_value l -> info.var_input <- Manual_value (l @ [input])
-          ) !saved_inprows inputs;
+          let inputs = List.map2 (fun (info, _) s -> parse_input info.row.var_type s) hins inputs in
+          (* Save the values *)
+          List.iter2
+            (fun (info, _) v -> info.row.var_values <- info.row.var_values @ [v])
+            hins inputs;
           let outputs = step_fun inputs in
-          set_latest_outputs houts outputs;
-          disable_latest_inputs ();
-          add_column ()
+          List.iter2
+            (fun (info, _) v -> info.var_values <- info.var_values @ [v])
+            houts outputs;
+          show_chronogram_values hins houts
         with e -> Console.error (Printexc.to_string e));
       true)]
     [txt "step"])
@@ -364,103 +417,52 @@ let rec create_hist_table divid inps outs reset_fun step_fun =
     T.(button ~a:[
       a_onclick (fun _ ->
         (try
-          reset_hist_table houts
+           (* TODO actually reset values, program and input mems via reset_fun(s) *)
+           show_chronogram_values hins houts
         with e -> Console.error (Printexc.to_string e));
       true)]
     [txt "reset"])
   in
 
-  (* As we added a new cell for each row of inputs, we need to create a initial gap to correctly align the rows of inputs with the head row and the rows of outputs *)
-  Dom.appendChild (by_id headid) (of_node T.(th [txt ""]));
-  List.iter (fun (rowid, _, v_type, _) -> Dom.appendChild (by_id rowid) (of_node (output_cell (is_boolean_type v_type)))) houts;
+  Dom.appendChild interp_div (of_node step_button);
+  Dom.appendChild interp_div (of_node reset_button);
 
-  (* Reset the saved inputs list if the saved inputs have changed (ignoring changes in names) *)
-  if List.map (fun (_, info) -> info.var_type) !saved_inprows <> List.map (fun (_, v_type) -> v_type) inps
-  then (
-    let div = by_id divid in
-    (try Dom.removeChild div (by_id interp_hist_id) with _ -> ());
+  show_chronogram_values hins houts
 
-    let hhead = T.(tr ~a:[a_id headid] [th [txt ""]]) in
-    let tabl = T.(table ~a:[] (hhead :: List.map (fun (_, _, _, x) -> x) (hins @ houts))) in
+(*   List.iter (fun (rowid, _, v_type, _) -> Dom.appendChild (by_id rowid) (of_node (output_cell (is_boolean_type v_type)))) houts; *)
 
-    (* This is where the DOM elements of the table are created *)
-    let interp_div = of_node T.(div ~a:[a_id interp_hist_id] [tabl]) in
-    Dom.appendChild div interp_div;
-    Dom.appendChild interp_div (of_node step_button);
-    Dom.appendChild interp_div (of_node reset_button);
+(*   (\* Reset the saved inputs list if the saved inputs have changed (ignoring changes in names) *\) *)
+(*   if List.map (fun (_, info) -> info.var_type) !saved_inprows <> List.map (fun (_, v_type) -> v_type) inps *)
+(*   then ( *)
+(*     let div = by_id divid in *)
+(*     (try Dom.removeChild div (by_id interp_hist_id) with _ -> ()); *)
 
-    saved_inprows :=
-      List.map (fun (rowid, v_name, v_type, _) ->
-        let row = by_id rowid in
-        let info =
-          { var_name = v_name ;
-            var_type = v_type ;
-            var_input = Manual_value [] }
-        in
-        row, info
-      ) hins
-  )
-  (*else saved_inprows :=
-    List.map2 (fun (rowid, _, _ ,_) (_, info) ->
-      let row = by_id rowid in
-      row, info
-    ) hins !saved_inprows*);
+(*     saved_inprows := *)
+(*       List.map (fun (rowid, v_name, v_type, _) -> *)
+(*         let row = by_id rowid in *)
+(*         let info = *)
+(*           { var_name = v_name ; *)
+(*             var_type = v_type ; *)
+(*             var_input = Manual_value [] } *)
+(*         in *)
+(*         row, info *)
+(*       ) hins *)
+(*   ) *)
+(*   (\*else saved_inprows := *)
+(*     List.map2 (fun (rowid, _, _ ,_) (_, info) -> *)
+(*       let row = by_id rowid in *)
+(*       row, info *)
+(*     ) hins !saved_inprows*\); *)
 
-    print_endline "stop 1";
+(*     print_endline "stop 1"; *)
 
-  (* Add editors in order to put an expression in Heptagon *)
-  List.iter (fun (row, info) ->
-    let input_editor_div_id = Atom.fresh "input-editor" in
-    let input_editor_div = T.(div ~a:[a_id input_editor_div_id; a_class ["editor"; "editor-row"]][]) in
-    Dom.appendChild row (of_node input_editor_div);
-    let editor_struct = Ace.({
-      editor_div = by_id input_editor_div_id;
-      editor = Ace.edit (by_id input_editor_div_id);
-      marks = [];
-      keybinding_menu = false
-    }) in
-    set_editor_single_line editor_struct.editor;
-    Ace.set_mode editor_struct "ace/mode/lustre";
-    Ace.set_tab_size editor_struct 2;
-    match info.var_input with
-      | Value_from_editor editor_info ->
-          editor_info.reset_fun ();
-          editor_struct.editor##setValue (Js.string editor_info.saved_expression)
-      | Manual_value _ -> ();
+(*   print_endline "stop 2"; *)
 
-    Ace.(editor_struct.editor)##on (Js.string "change") (fun () ->
-      Sys_js.set_channel_flusher stderr (fun e -> print_error editor_struct e);
-      reset_editor editor_struct;
-      let editor_value = Ace.get_contents editor_struct in
-      try
-        let lexbuf = Lexing.from_string editor_value in
-        let program = Compil.build_input_program lexbuf info.var_name (Hept_scoping2.translate_into_hept_parsetree_ty info.var_type) in
-        let obc_program = Compil.compile_program "main" program in
-        match obc_program.p_desc with
-          | [Pclass cls] ->
-            let mem = ref (Obc_interp.reset obc_program cls.cd_name.name) in
-            info.var_input <- Value_from_editor
-              { reset_fun = (fun () ->
-                  mem := Obc_interp.reset obc_program cls.cd_name.name);
-                step_fun = (fun () ->
-                  let inputs = [] in
-                  let (outputs, new_mem) = Obc_interp.step obc_program cls.cd_name.name inputs !mem in
-                  mem := new_mem;
-                  List.hd outputs);
-                saved_expression = editor_value };
-              reset_hist_table houts
-          | _ -> ()
-      with Errors.Error -> ()
-    )
-  ) !saved_inprows;
+(*   (\* Add a column to the table *\) *)
+(*   column_number := 1; *)
+(*   add_column (); *)
 
-  print_endline "stop 2";
-
-  (* Add a column to the table *)
-  column_number := 1;
-  add_column ();
-
-  reset_fun ()
+(*   reset_fun () *)
 
 let create_panel ptype controls =
   let body = by_id "body" in
@@ -506,7 +508,7 @@ let create_select divid (options : string list) default (onselect : string -> un
   let options = List.map (fun s -> T.(option ~a:[] (txt s))) options in
   let select = of_node T.(select ~a:[] options) in
   let select = Js.Unsafe.coerce select in
-  Dom.insertBefore (by_id divid) select (by_id divid)##.firstChild;
+  Dom.appendChild (by_id divid) select;
   select##.onchange :=
     (fun e -> onselect (Js.to_string select##.value); true);
   select##.value := default;

@@ -12,6 +12,7 @@ SRC := \
 	examples.ml \
 	hept_scoping2.ml \
 	compil.ml \
+	chronogram.ml \
 	page.ml \
 	simul.ml interp.ml \
 	tryhept.ml \

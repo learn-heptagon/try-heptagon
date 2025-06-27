@@ -17,12 +17,10 @@ module type Interpreter = sig
 end
 
 exception InterpreterError of string
-exception ParseInputError of string
 let () =
   Printexc.register_printer
     (function
       | InterpreterError s -> Some (Printf.sprintf "Interpreter error: %s" s)
-      | ParseInputError v -> Some (Printf.sprintf "Couldn't parse input %s" v)
       | _ -> None)
 
 (* let interpreter_error (msg : Errors.errcode list) = *)
@@ -79,50 +77,55 @@ let ( let* ) x f =
   | Some x -> f x
   | None -> ()
 
-let parse_input typ s =
-  try
-    if s = "." then Vundef
-    else
-      let open Types in
-      match typ with
-      | Tid { name = "bool" } -> Vbool (s = "true")
-      | Tid { name = "int" } -> Vint (int_of_string s)
-      | Tid { name = "real" } | Tid { name = "float" } -> Vfloat (float_of_string s)
-      | _ -> failwith "TODO"
-  with _ -> raise (ParseInputError s)
-
 let stop_fun = ref (fun _ -> ())
+
+let saved_st = ref None
 
 let load_interp (panelid : string) (prog: Obc.program) int =
   !stop_fun ();
   let editorid = panelid^"-editor" in
-  try Page.remove_first_child editorid with _ -> ();
+  (try Page.clear_div editorid with _ -> ());
   match int with
   | Chronogram ->
     let names = List.filter_map (function Pclass cl -> Some cl.cd_name.name | _ -> None) prog.p_desc in
-    (try
-       Page.create_select editorid names (choose_default names !old_node)
-         (fun cname ->
-            old_node := Some cname;
-            let cls = Obc_interp.find_class prog cname in
-            let met = Obc_interp.find_method cls Mstep in
-            let mem = ref (Obc_interp.reset prog cname) in
+    Page.create_select editorid names (choose_default names !old_node)
+      (fun cname ->
+        old_node := Some cname;
+        let cls = Obc_interp.find_class prog cname in
+        let met = Obc_interp.find_method cls Mstep in
+        let mem = ref (Obc_interp.reset prog cname) in
 
-            let reset_fun = fun () ->
-              mem := Obc_interp.reset prog cname
-            and step_fun = fun inputs ->
-              let inputs = List.map2 (fun vd s -> parse_input vd.v_type s) met.m_inputs inputs in
-              (* Obc_printer.print_prog Format.std_formatter prog; *)
-              let (outputs, new_mem) = Obc_interp.step prog cname inputs !mem in
-              mem := new_mem;
-              List.map Page.string_of_value outputs
+        let reset_fun = fun () ->
+          mem := Obc_interp.reset prog cname
+        and step_fun = fun inputs ->
+          (* Obc_printer.print_prog Format.std_formatter prog; *)
+          let (outputs, new_mem) = Obc_interp.step prog cname inputs !mem in
+          mem := new_mem;
+          outputs
+        in
+
+        let open Chronogram in
+
+        let interface_matches inputs outputs st =
+          List.map (fun info -> (info.row.var_name, info.row.var_type)) st.inputs = List.map (fun vd -> (Idents.source_name vd.v_ident, vd.v_type)) inputs
+          && List.map (fun info -> (info.var_name, info.var_type)) st.outputs = List.map (fun vd -> (Idents.source_name vd.v_ident, vd.v_type)) outputs
+        in
+
+        let st =
+          match !saved_st with
+          | Some st when interface_matches met.m_inputs met.m_outputs st -> st
+          | _ ->
+            let st =
+              Chronogram.make
+                (List.map (fun vd -> (Idents.source_name vd.v_ident, vd.v_type)) met.m_inputs)
+                (List.map (fun vd -> (Idents.source_name vd.v_ident, vd.v_type)) met.m_outputs)
             in
+            saved_st := Some st;
+            st
+        in
 
-            Page.create_hist_table editorid
-              (List.map (fun vd -> (Idents.source_name vd.v_ident, vd.v_type)) met.m_inputs)
-              (List.map (fun vd -> (Idents.source_name vd.v_ident, vd.v_type)) met.m_outputs)
-              reset_fun step_fun)
-     with _ -> ())
+        Page.show_chronogram editorid st reset_fun step_fun
+      )
   | Simulator simul ->
     let (module Simul) = simul in
     stop_fun := Simul.init editorid
