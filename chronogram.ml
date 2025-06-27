@@ -31,6 +31,29 @@ let make inputs outputs =
     outputs = List.map (fun (name, typ) -> mk_row_info name typ) outputs;
   }
 
+let rec recompute_outputs step_fun st =
+  List.iter (fun info -> info.var_values <- []) st.outputs;
+  let input_values_lists = List.map (fun info -> info.row.var_values) st.inputs in
+  let rec browse_columns list_of_lists =
+    match list_of_lists with
+      | [] -> ()
+      | l :: _ ->
+        (* If the first list is empty, then all lists are empty. *)
+        if l = [] then ()
+        else
+          (* Analogically corresponds to the "current column" of inputs (respectively, outputs), i.e., the column of inputs (respectively, outputs) for the current index. *)
+          let current_inputs = List.map List.hd list_of_lists in
+          let current_outputs = step_fun current_inputs in
+
+          List.iter2 (fun info v ->
+            info.var_values <- info.var_values @ [v]
+          ) st.outputs current_outputs;
+
+          let remaining_columns = List.map List.tl list_of_lists in
+          browse_columns remaining_columns
+  in
+  browse_columns input_values_lists
+
 open Obc_interp
 
 let rec string_of_value value =

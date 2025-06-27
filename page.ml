@@ -221,8 +221,6 @@ let set_editor_single_line editor =
 
 let show_chronogram_values hins houts =
 
-    (* Dom.appendChild (by_id headid) (of_node (column_head st.column_nb)); *)
-
     let show_values row isbool values =
       List.iter (fun v ->
         let cell = output_cell isbool v in
@@ -245,7 +243,6 @@ let show_chronogram_values hins houts =
       match info.editor with
         | Some editor_info when editor_info.saved_expression <> "" ->
           let value = editor_info.step_fun () in
-         (* info.row.var_values <- info.row.var_values @ [value];*)
           let cell = output_cell (is_boolean_type info.row.var_type) value in
           Dom.appendChild (by_id rowid) (of_node cell)
         | _ ->
@@ -294,7 +291,7 @@ let create_input_editor hins houts info rowid =
                          mem := Obc_interp.reset obc_program cls.cd_name.name);
                        step_fun = (fun () ->
                          let inputs = [] in
-                         let (outputs, new_mem) = Obc_interp.step obc_program cls.cd_name.name inputs ! mem in
+                         let (outputs, new_mem) = Obc_interp.step obc_program cls.cd_name.name inputs !mem in
                          mem := new_mem;
                          List.hd outputs);
                        saved_expression = editor_value };
@@ -316,7 +313,7 @@ let rec show_chronogram divid (st: Chronogram.t) reset_fun step_fun =
   let tabl = T.(table ~a:[]
                   (hhead
                    :: List.map (fun (info, rowid) -> T.(tr ~a:[a_id rowid] [th [txt info.row.var_name; txt " = "]])) hins
-                   @  List.map (fun (info, rowid) -> T.(tr ~a:[a_id rowid] [th [txt info.var_name; txt " = "]; th [txt ""]])) houts)) in
+                   @ List.map (fun (info, rowid) -> T.(tr ~a:[a_id rowid] [th [txt info.var_name; txt " = "]; th [txt ""]])) houts)) in
 
   let div = by_id divid in
   (try Dom.removeChild div (by_id interp_hist_id) with _ -> ());

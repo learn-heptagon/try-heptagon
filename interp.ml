@@ -124,6 +124,8 @@ let load_interp (panelid : string) (prog: Obc.program) int =
             st
         in
 
+        Chronogram.recompute_outputs step_fun st;
+
         Page.show_chronogram editorid st reset_fun step_fun
       )
   | Simulator simul ->
