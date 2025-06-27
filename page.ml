@@ -225,89 +225,84 @@ let show_chronogram_values hins houts =
 
     let show_values row isbool values =
       List.iter (fun v ->
-          let cell = output_cell isbool v in
-          Dom.appendChild row (of_node cell);
-        ) values
+        let cell = output_cell isbool v in
+        Dom.appendChild row (of_node cell);
+      ) values
     in
 
     List.iter (fun (info, rowid) ->
-        clear_div_from rowid 2;
-        show_values (by_id rowid) (is_boolean_type info.row.var_type) info.row.var_values
-      (* let row = by_id rowid in *)
-      (* Dom.appendChild row (of_node (input_cell (is_boolean_type info.row.var_type))); *)
-      (* let input = get_row_input row in *)
-      (* match info.editor with *)
-      (* | Some editor_info -> *)
-      (*   let result = editor_info.step_fun () in *)
-      (*   input##.disabled := Js.bool true; *)
-      (*   if is_boolean_type info.row.var_type then *)
-      (*     input##.checked := Js.bool (result = Vbool true) *)
-      (*   else *)
-      (*     input##.value := Js.string (string_of_value result) *)
-      (* | None -> () *)
-      ) hins;
+      clear_div_from rowid 2;
+      show_values (by_id rowid) (is_boolean_type info.row.var_type) info.row.var_values
+    ) hins;
 
     List.iter (fun (info, rowid) ->
-        clear_div_from rowid 2;
-        show_values (by_id rowid) (is_boolean_type info.var_type) info.var_values
-      ) houts;
+      clear_div_from rowid 2;
+      show_values (by_id rowid) (is_boolean_type info.var_type) info.var_values
+    ) houts;
 
-    (* add final column *)
+    (* Add a final column *)
     List.iter (fun (info, rowid) ->
-        (* TODO if non-empty editor, step and write the value in the cell *)
-        let cell = input_cell (is_boolean_type info.row.var_type) in
-        Dom.appendChild (by_id rowid) (of_node cell)
-      ) hins
+      match info.editor with
+        | Some editor_info when editor_info.saved_expression <> "" ->
+          let value = editor_info.step_fun () in
+         (* info.row.var_values <- info.row.var_values @ [value];*)
+          let cell = output_cell (is_boolean_type info.row.var_type) value in
+          Dom.appendChild (by_id rowid) (of_node cell)
+        | _ ->
+          let cell = input_cell (is_boolean_type info.row.var_type) in
+          Dom.appendChild (by_id rowid) (of_node cell);
+    ) hins
 
-let create_input_editor info rowid =
+let create_input_editor hins houts info rowid =
   let input_editor_div_id = Atom.fresh "input-editor" in
   let input_editor_div = T.(div ~a:[a_id input_editor_div_id; a_class ["editor"; "editor-row"]][]) in
   Dom.appendChild (by_id rowid) (of_node input_editor_div);
 
   let editor_struct =
     Ace.({
-            editor_div = by_id input_editor_div_id;
-            editor = Ace.edit (by_id input_editor_div_id);
-            marks = [];
-            keybinding_menu = false
+      editor_div = by_id input_editor_div_id;
+      editor = Ace.edit (by_id input_editor_div_id);
+      marks = [];
+      keybinding_menu = false
     }) in
   set_editor_single_line editor_struct.editor;
   Ace.set_mode editor_struct "ace/mode/lustre";
   Ace.set_tab_size editor_struct 2;
   (match info.editor with
-  | Some editor_info ->
-    (* editor_info.reset_fun (); *)
-    editor_struct.editor##setValue (Js.string editor_info.saved_expression)
-  | None -> ());
+    | Some editor_info -> editor_struct.editor##setValue (Js.string editor_info.saved_expression)
+    | None -> ()
+  );
 
   Ace.(editor_struct.editor)##on (Js.string "change") (fun () ->
       Sys_js.set_channel_flusher stderr (fun e -> print_error editor_struct e);
       reset_editor editor_struct;
       let editor_value = Ace.get_contents editor_struct in
-      (* TODO special case when the string is empty, set info.editor back to None *)
-      try
-        let lexbuf = Lexing.from_string editor_value in
-        let program = Compil.build_input_program lexbuf
-                        info.row.var_name
-                        (Hept_scoping2.translate_into_hept_parsetree_ty info.row.var_type)
-        in
-        let obc_program = Compil.compile_program "main" program in
-        match obc_program.p_desc with
-        | [Pclass cls] ->
-          let mem = ref (Obc_interp.reset obc_program cls.cd_name.name) in
-          info.editor <- Some
-                           { reset_fun = (fun () ->
-                               mem := Obc_interp.reset obc_program cls.cd_name.name);
-                             step_fun = (fun () ->
-                               let inputs = [] in
-                               let (outputs, new_mem) = Obc_interp.step obc_program cls.cd_name.name inputs !mem in
-                               mem := new_mem;
-                               List.hd outputs);
-                             saved_expression = editor_value };
-          (* reset_hist_table houts *)
-          ()
-        | _ -> ()
-      with Errors.Error -> ()
+      if editor_value <> "" then
+        (try
+          let lexbuf = Lexing.from_string editor_value in
+          let program =
+            Compil.build_input_program lexbuf
+                                       info.row.var_name
+                                       (Hept_scoping2.translate_into_hept_parsetree_ty info.row.var_type)
+          in
+          let obc_program = Compil.compile_program "main" program in
+          match obc_program.p_desc with
+            | [Pclass cls] ->
+              let mem = ref (Obc_interp.reset obc_program cls.cd_name.name) in
+              info.editor <-
+                Some { reset_fun = (fun () ->
+                         mem := Obc_interp.reset obc_program cls.cd_name.name);
+                       step_fun = (fun () ->
+                         let inputs = [] in
+                         let (outputs, new_mem) = Obc_interp.step obc_program cls.cd_name.name inputs ! mem in
+                         mem := new_mem;
+                         List.hd outputs);
+                       saved_expression = editor_value };
+              ()
+            | _ -> ()
+        with Errors.Error -> ())
+      else info.editor <- None;
+      show_chronogram_values hins houts
     )
 
 let rec show_chronogram divid (st: Chronogram.t) reset_fun step_fun =
@@ -331,7 +326,7 @@ let rec show_chronogram divid (st: Chronogram.t) reset_fun step_fun =
   Dom.appendChild div interp_div;
 
   (* Add editors in order to put an expression in Heptagon *)
-  List.iter (fun (info, rowid) -> create_input_editor info rowid) hins;
+  List.iter (fun (info, rowid) -> create_input_editor hins houts info rowid) hins;
 
   let get_row_input row : Dom_html.inputElement Js.t =
     let opt_get o = Js.Opt.get o (fun _ -> failwith "get_row_input") in
@@ -346,53 +341,6 @@ let rec show_chronogram divid (st: Chronogram.t) reset_fun step_fun =
         else input##.value |> Js.to_string
     ) hins in
 
-(*   let get_row_output row = *)
-(*     Js.Opt.get row##.lastChild (fun _ -> failwith "get_row_output") in *)
-
-(*   let set_latest_outputs houts output = *)
-(*     List.iter2 ( *)
-(*       fun (rowid, _, v_type, _) s -> *)
-(*         let cell = get_row_output (by_id rowid) in *)
-(*         Dom.appendChild cell *)
-(*           (of_node T.(if is_boolean_type v_type *)
-(*                       then input ~a:([a_input_type `Checkbox; a_disabled ()]@(if s = "true" then [a_checked ()] else [])) () *)
-(*                       else txt s)) *)
-(*     ) houts output in *)
-
-(*     (\* Restore previously saved inputs and display them in the table. That ensures that the table is not graphically reset at each new compilation (unless the number of entries or the type of even a single entry changes). *\) *)
-(* (\*    try *)
-(*       let inputs = get_latest_inputs () in *)
-(*       let restored_outputs = step_fun inputs in *)
-(*       set_latest_outputs restored_outputs; *)
-(*       disable_latest_inputs () *)
-(*     with e -> Console.error (Printexc.to_string e);*\) *)
-(* (\* *)
-(*     List.iter (fun (rowid, _, v_type, _) -> Dom.appendChild (by_id rowid) (of_node (output_cell (is_boolean_type v_type)))) houts;*\) *)
-
-(*     column_number := !column_number + 1 *)
-(*   in *)
-
-(*   let reset_hist_table houts = *)
-(*     List.iter (fun (_, info) -> *)
-(*       match info.var_input with *)
-(*         | Value_from_editor _ -> () *)
-(*         | Manual_value _ -> info.var_input <- Manual_value [] *)
-(*     ) !saved_inprows; *)
-
-(*     let remove_children parent = *)
-(*       let children = parent##.childNodes in *)
-(*       while children##.length > 2 do *)
-(*         let child_to_remove = Js.Opt.get (children##item 2) (fun _ -> failwith "remove_children") in *)
-(*         parent##removeChild child_to_remove *)
-(*       done *)
-(*     in *)
-(*     remove_children (Js.Unsafe.coerce (by_id headid)); *)
-(*     List.iter (fun (row, _) -> remove_children (Js.Unsafe.coerce row)) !saved_inprows; *)
-(*     List.iter (fun (rowid, _, _, _) -> remove_children (by_id rowid)) houts; *)
-
-(*     column_number := 1; *)
-(*   in *)
-
   let step_button =
     T.(button ~a:[
       a_onclick (fun _ ->
@@ -400,13 +348,13 @@ let rec show_chronogram divid (st: Chronogram.t) reset_fun step_fun =
           let inputs = get_latest_inputs () in
           let inputs = List.map2 (fun (info, _) s -> parse_input info.row.var_type s) hins inputs in
           (* Save the values *)
-          List.iter2
-            (fun (info, _) v -> info.row.var_values <- info.row.var_values @ [v])
-            hins inputs;
+          List.iter2 (fun (info, _) v ->
+            info.row.var_values <- info.row.var_values @ [v]
+          ) hins inputs;
           let outputs = step_fun inputs in
-          List.iter2
-            (fun (info, _) v -> info.var_values <- info.var_values @ [v])
-            houts outputs;
+          List.iter2 (fun (info, _) v ->
+            info.var_values <- info.var_values @ [v]
+          ) houts outputs;
           show_chronogram_values hins houts
         with e -> Console.error (Printexc.to_string e));
       true)]
@@ -417,8 +365,17 @@ let rec show_chronogram divid (st: Chronogram.t) reset_fun step_fun =
     T.(button ~a:[
       a_onclick (fun _ ->
         (try
-           (* TODO actually reset values, program and input mems via reset_fun(s) *)
-           show_chronogram_values hins houts
+          List.iter (fun (info, _) ->
+            info.row.var_values <- [];
+            match info.editor with
+              | Some editor_info -> editor_info.reset_fun()
+              | None -> ()
+          ) hins;
+          List.iter (fun (info, _) ->
+            info.var_values <- []
+          ) houts;
+          reset_fun ();
+          show_chronogram_values hins houts
         with e -> Console.error (Printexc.to_string e));
       true)]
     [txt "reset"])
@@ -428,41 +385,6 @@ let rec show_chronogram divid (st: Chronogram.t) reset_fun step_fun =
   Dom.appendChild interp_div (of_node reset_button);
 
   show_chronogram_values hins houts
-
-(*   List.iter (fun (rowid, _, v_type, _) -> Dom.appendChild (by_id rowid) (of_node (output_cell (is_boolean_type v_type)))) houts; *)
-
-(*   (\* Reset the saved inputs list if the saved inputs have changed (ignoring changes in names) *\) *)
-(*   if List.map (fun (_, info) -> info.var_type) !saved_inprows <> List.map (fun (_, v_type) -> v_type) inps *)
-(*   then ( *)
-(*     let div = by_id divid in *)
-(*     (try Dom.removeChild div (by_id interp_hist_id) with _ -> ()); *)
-
-(*     saved_inprows := *)
-(*       List.map (fun (rowid, v_name, v_type, _) -> *)
-(*         let row = by_id rowid in *)
-(*         let info = *)
-(*           { var_name = v_name ; *)
-(*             var_type = v_type ; *)
-(*             var_input = Manual_value [] } *)
-(*         in *)
-(*         row, info *)
-(*       ) hins *)
-(*   ) *)
-(*   (\*else saved_inprows := *)
-(*     List.map2 (fun (rowid, _, _ ,_) (_, info) -> *)
-(*       let row = by_id rowid in *)
-(*       row, info *)
-(*     ) hins !saved_inprows*\); *)
-
-(*     print_endline "stop 1"; *)
-
-(*   print_endline "stop 2"; *)
-
-(*   (\* Add a column to the table *\) *)
-(*   column_number := 1; *)
-(*   add_column (); *)
-
-(*   reset_fun () *)
 
 let create_panel ptype controls =
   let body = by_id "body" in
