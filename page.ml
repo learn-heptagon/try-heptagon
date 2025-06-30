@@ -242,7 +242,8 @@ let show_chronogram_values hins houts =
     List.iter (fun (info, rowid) ->
       match info.editor with
         | Some editor_info when editor_info.saved_expression <> "" ->
-          let value = editor_info.step_fun () in
+          let nb_column = List.length info.row.var_values in
+          let value = editor_info.step_fun nb_column in
           let cell = output_cell (is_boolean_type info.row.var_type) value in
           Dom.appendChild (by_id rowid) (of_node cell)
         | _ ->
@@ -250,7 +251,19 @@ let show_chronogram_values hins houts =
           Dom.appendChild (by_id rowid) (of_node cell);
     ) hins
 
-let create_input_editor hins houts info rowid =
+let reset_inputs reset_fun hins houts =
+  List.iter (fun (info, _) ->
+    info.row.var_values <- [];
+    match info.editor with
+      | Some editor_info -> editor_info.reset_fun()
+      | None -> ()
+    ) hins;
+    List.iter (fun (info, _) ->
+      info.var_values <- []
+    ) houts;
+  reset_fun ()
+
+let create_input_editor reset_fun hins houts info rowid =
   let input_editor_div_id = Atom.fresh "input-editor" in
   let input_editor_div = T.(div ~a:[a_id input_editor_div_id; a_class ["editor"; "editor-row"]][]) in
   Dom.appendChild (by_id rowid) (of_node input_editor_div);
@@ -283,22 +296,40 @@ let create_input_editor hins houts info rowid =
                                        (Hept_scoping2.translate_into_hept_parsetree_ty info.row.var_type)
           in
           let obc_program = Compil.compile_program "main" program in
-          match obc_program.p_desc with
-            | [Pclass cls] ->
-              let mem = ref (Obc_interp.reset obc_program cls.cd_name.name) in
-              info.editor <-
-                Some { reset_fun = (fun () ->
-                         mem := Obc_interp.reset obc_program cls.cd_name.name);
-                       step_fun = (fun () ->
-                         let inputs = [] in
-                         let (outputs, new_mem) = Obc_interp.step obc_program cls.cd_name.name inputs !mem in
-                         mem := new_mem;
-                         List.hd outputs);
-                       saved_expression = editor_value };
-              ()
-            | _ -> ()
+          Obc_printer.print stdout obc_program;
+
+          let is_pclass desc =
+            match desc with
+              | Obc.Pclass _ -> true
+              | _ -> false
+          in
+          let cls =
+            match List.find is_pclass obc_program.p_desc with
+              | Obc.Pclass a_class -> a_class
+              | _ -> failwith "Expected a class"
+          in
+
+          let mem = ref (Obc_interp.reset obc_program cls.cd_name.name) in
+          let last_value = ref (Obc_interp.Vbool false) in
+          let next_column = ref 0 in
+          info.editor <- Some {
+            reset_fun = (fun () ->
+              mem := Obc_interp.reset obc_program cls.cd_name.name;
+              next_column := 0);
+            step_fun = (fun i ->
+              if i >= !next_column then (
+                let inputs = [] in
+                let (outputs, new_mem) = Obc_interp.step obc_program cls.cd_name.name inputs !mem in
+                mem := new_mem;
+                last_value := List.hd outputs;
+                next_column := !next_column + 1
+              );
+              !last_value);
+            saved_expression = editor_value
+          };
         with Errors.Error -> ())
       else info.editor <- None;
+      reset_inputs reset_fun hins houts;
       show_chronogram_values hins houts
     )
 
@@ -323,7 +354,7 @@ let rec show_chronogram divid (st: Chronogram.t) reset_fun step_fun =
   Dom.appendChild div interp_div;
 
   (* Add editors in order to put an expression in Heptagon *)
-  List.iter (fun (info, rowid) -> create_input_editor hins houts info rowid) hins;
+  List.iter (fun (info, rowid) -> create_input_editor reset_fun hins houts info rowid) hins;
 
   let get_row_input row : Dom_html.inputElement Js.t =
     let opt_get o = Js.Opt.get o (fun _ -> failwith "get_row_input") in
@@ -362,16 +393,7 @@ let rec show_chronogram divid (st: Chronogram.t) reset_fun step_fun =
     T.(button ~a:[
       a_onclick (fun _ ->
         (try
-          List.iter (fun (info, _) ->
-            info.row.var_values <- [];
-            match info.editor with
-              | Some editor_info -> editor_info.reset_fun()
-              | None -> ()
-          ) hins;
-          List.iter (fun (info, _) ->
-            info.var_values <- []
-          ) houts;
-          reset_fun ();
+          reset_inputs reset_fun hins houts;
           show_chronogram_values hins houts
         with e -> Console.error (Printexc.to_string e));
       true)]

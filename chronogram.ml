@@ -8,7 +8,7 @@ type row_info = {
 
 type input_editor_info = {
     reset_fun : unit -> unit;
-    step_fun : unit -> Obc_interp.value;
+    step_fun : int -> Obc_interp.value;
     saved_expression : string;
   }
 
@@ -18,7 +18,6 @@ type input_row_info = {
   }
 
 type t = {
-    mutable column_nb : int;
     inputs : input_row_info list;
     outputs : row_info list;
   }
@@ -26,7 +25,6 @@ type t = {
 let make inputs outputs =
   let mk_row_info var_name var_type = { var_name; var_type; var_values = [] } in
   {
-    column_nb = 1;
     inputs = List.map (fun (name, typ) -> { row = mk_row_info name typ; editor = None }) inputs;
     outputs = List.map (fun (name, typ) -> mk_row_info name typ) outputs;
   }
