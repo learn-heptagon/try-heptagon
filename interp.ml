@@ -1,21 +1,6 @@
 open Obc
 open Obc_interp
 
-(* Access interpreter functions from Heptagon *)
-module type Interpreter = sig
-  (** Interpreter syntax *)
-  type syn
-
-  (** Interpreter state *)
-  type state
-
-  (** Init/reinit the interpreter from the AST the program *)
-  val reset : syn -> string -> state
-
-  (** Call the given node, take a step *)
-  val step : syn -> string -> state -> value list -> (value list * state)
-end
-
 exception InterpreterError of string
 let () =
   Printexc.register_printer
@@ -31,37 +16,28 @@ let () =
 (* let str_of_ident x = Camlcoq.camlstring_of_coqstring @@ Ident.pos_to_str @@ x *)
 
 (* Interpreting Obc *)
-module ObcInterpreter : Interpreter with type syn = Obc.program and type state = Obc_interp.memory = struct
-  type syn = Obc.program
-  type state = Obc_interp.memory
-
-  let reset p cname = Obc_interp.reset p cname
-
-  let step p cname me ins = Obc_interp.step p cname ins me
-end
-
-module ObcSimulInterpreter(P : sig
+module ObcInterpreter(P : sig
     val prog : Obc.program
     val classname : string
   end) : Simul.Interpreter = struct
   let mem = ref Obc_interp.init_memory
 
   let reset () =
-    mem := ObcInterpreter.reset P.prog P.classname
+    mem := Obc_interp.reset P.prog P.classname
 
   let step ins =
-    let (outs, nmem) = ObcInterpreter.step P.prog P.classname !mem ins in
+    let (outs, nmem) = Obc_interp.step P.prog P.classname ins !mem in
     mem := nmem;
     outs
 end
+
+module DefaultInterpreter = ObcInterpreter
 
 (* Interpreter related functions *)
 
 type interp_type =
   | Chronogram (* Simply fill a chronogram *)
   | Simulator of (module Simul.Simulator)
-
-(* let step_fun = ref (fun () -> ()) *)
 
 let old_node = ref None
 
@@ -91,18 +67,9 @@ let load_interp (panelid : string) (prog: Obc.program) int =
     Page.create_select editorid names (choose_default names !old_node)
       (fun cname ->
         old_node := Some cname;
-        let cls = Obc_interp.find_class prog cname in
-        let met = Obc_interp.find_method cls Mstep in
-        let mem = ref (Obc_interp.reset prog cname) in
+        let met = Obc_interp.find_method (Obc_interp.find_class prog cname) Mstep in
 
-        let reset_fun = fun () ->
-          mem := Obc_interp.reset prog cname
-        and step_fun = fun inputs ->
-          (* Obc_printer.print_prog Format.std_formatter prog; *)
-          let (outputs, new_mem) = Obc_interp.step prog cname inputs !mem in
-          mem := new_mem;
-          outputs
-        in
+        let open DefaultInterpreter(struct let prog = prog let classname = cname end) in
 
         let open Chronogram in
 
@@ -124,9 +91,9 @@ let load_interp (panelid : string) (prog: Obc.program) int =
             st
         in
 
-        Chronogram.recompute_outputs step_fun st;
+        Chronogram.recompute_outputs step st;
 
-        Page.show_chronogram editorid st reset_fun step_fun
+        Page.show_chronogram editorid st reset step
       )
   | Simulator simul ->
     let (module Simul) = simul in
@@ -139,31 +106,31 @@ let interpreter_of_example s p =
   (*   Simulator (module Simul.TruthTable) *) (* TODO *)
   | "filters.lus" | "fifo-filters.lus" ->
     Simulator (module Simul.FilterSimul(
-                          ObcSimulInterpreter(struct
+                          DefaultInterpreter(struct
                               let prog = p
                               let classname = "system"
       end)))
   | "stopwatch.lus" ->
     Simulator (module Simul.StopwatchSimul(
-                          ObcSimulInterpreter(struct
+                          DefaultInterpreter(struct
                               let prog = p
                               let classname = "stopwatch"
                             end)
       ))
   | "fifo-audio.lus" ->
     Simulator (module Simul.AudioFilterSimul(
-                          ObcSimulInterpreter(struct
+                          DefaultInterpreter(struct
                               let prog = p
                               let classname = "main"
                             end)
       ))
   (* | "stepper.lus" -> Simulator (module Stepper_simul.StepperSimul( *)
-  (*       ObcSimulInterpreter(struct *)
+  (*       DefaultInterpreter(struct *)
   (*         let prog = p *)
   (*         let classname = "motor" *)
   (*       end))) *)
   (* | "porte_telecabine.lus" -> Simulator (module Porte_telecabine_simul.Simul( *)
-  (*       ObcSimulInterpreter(struct *)
+  (*       DefaultInterpreter(struct *)
   (*         let prog = p *)
   (*         let classname = "control_porte" *)
   (*       end) *)
