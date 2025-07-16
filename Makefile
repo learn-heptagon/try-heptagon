@@ -14,6 +14,7 @@ SRC := \
 	compil.ml \
 	chronogram.ml \
 	page.ml \
+	js_obc_conversion.ml \
 	simul.ml interp.ml \
 	tryhept.ml \
 	pervasives.ml mathlib.ml

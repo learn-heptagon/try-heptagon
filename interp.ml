@@ -55,6 +55,49 @@ module ObcSimulInterpreter(P : sig
     outs
 end
 
+(* Executing JS *)
+
+open Js_of_ocaml
+open Js_obc_conversion
+
+let js_eval (code : string) =
+  Js.Unsafe.fun_call (Js.Unsafe.js_expr "eval") [| Js.Unsafe.inject (Js.string code) |]
+
+module JsInterpreter(P : sig
+    val prog : Obc.program
+    val classname : string
+  end) : Simul.Interpreter = struct
+
+  let mem =
+    let js_prog = Obc2javascript.program P.prog in
+    Javascript_printer.program Format.str_formatter js_prog;
+    let js_code = Format.flush_str_formatter () in
+    print_endline js_code;
+    let js_code = js_code ^ "new System()" in
+    (* let js_code = String.concat "\\\n" (String.split_on_char '\n' js_code) in *)
+    js_eval js_code
+
+  let reset () =
+    Js.Unsafe.meth_call mem "reset" [||]
+
+  let step ins =
+    let found_class = find_class P.prog P.classname in
+    let found_method = find_method found_class Mstep in
+    let output_types = List.map (fun v -> v.v_type) found_method.m_outputs in
+
+    let js_result = Js.Unsafe.meth_call mem "step" (Array.of_list (List.map js_of_obc ins)) in
+
+    match output_types with
+      | [] -> []
+      | [ty_elem] -> [obc_of_js ty_elem js_result]
+      | ty_list ->
+        let js_arr = Js.Unsafe.coerce js_result in
+        List.mapi (fun i ty ->
+          let js_val = Js.array_get js_arr i in
+          obc_of_js ty (Js.Optdef.get js_val (fun _ -> failwith "Should not happen"))
+        ) output_types
+end
+
 (* Interpreter related functions *)
 
 type interp_type =
@@ -139,7 +182,7 @@ let interpreter_of_example s p =
   (*   Simulator (module Simul.TruthTable) *) (* TODO *)
   | "filters.lus" | "fifo-filters.lus" ->
     Simulator (module Simul.FilterSimul(
-                          ObcSimulInterpreter(struct
+                          JsInterpreter(struct
                               let prog = p
                               let classname = "system"
       end)))
