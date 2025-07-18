@@ -58,12 +58,12 @@ let rec obc_of_js (t : Types.ty) (v : Js.Unsafe.any) : Obc_interp.value =
       let i = Js.float_of_number (Js.Unsafe.coerce v : Js.number Js.t) in
       Vint (int_of_float i)
 
-    | Tid { name = "float"; _ } ->
+    | Tid { name = "float"; _ }
+    | Tid { name = "real"; _ } ->
       let f = Js.float_of_number (Js.Unsafe.coerce v : Js.number Js.t) in
       Vfloat f
 
-    | Tid c ->
-      Vconstructor c
+    | Tid _ -> failwith "TODO Td"
 
     | Tarray (base_ty, _) ->
       let js_arr = Js.to_array (Js.Unsafe.coerce v) in
