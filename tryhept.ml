@@ -41,7 +41,7 @@ let compile_and_output editor (panel: Page.panel) =
   let modname = Compil.prepare_module () in
   let p = Compil.parse_program modname (Ace.get_contents editor) in
   let p = Compil.compile_program modname p in
-  (* Obc_printer.print stdout p; *)
+  Obc_printer.print stdout p;
 
   match panel with
   | AcePanel (id, panel) ->
