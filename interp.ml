@@ -86,7 +86,7 @@ let old_node = ref None
 
 let rec choose_default names old =
   match names, old with
-  | [], _ -> invalid_arg "choose_default"
+  | [], _ -> raise (InterpreterError "No available node")
   | [n], _ -> n
   | hd::tl, Some old when old = hd -> hd
   | _::tl, _ -> choose_default tl old

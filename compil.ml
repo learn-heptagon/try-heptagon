@@ -46,6 +46,7 @@ let compile_program modname p =
   (* Process the MiniLS AST *)
   let p = Mls_compiler.compile_program p log_c in
   (* Compile MiniLS to Obc *)
+  Callgraph.reset_info ();
   let p = match Callgraph.program p with [p] -> p | _ -> invalid_arg "Callgraph.program" in
   let p = Mls2obc.program p in
   (* Obc transformations and printing *)

@@ -108,10 +108,12 @@ let _ =
 
   (* Compilation function *)
   let compile () =
+    compile_and_exn editor_panel.editor;
     try
-      compile_and_exn editor_panel.editor;
       List.iter (fun p -> compile_and_output editor_panel.editor p) !Page.output_panels
-    with _ -> ()
+    with
+    | Errors.Error -> ()
+    | e -> Page.Console.error (Printexc.to_string e)
   in
 
   Page.add_examples (fun name content -> load_example editor name content; compile ());
