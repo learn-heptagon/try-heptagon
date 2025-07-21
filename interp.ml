@@ -50,7 +50,6 @@ module JsInterpreter(P : sig
     let js_code = Format.flush_str_formatter () in
     print_endline js_code;
     let js_code = js_code ^ "new "^(String.capitalize_ascii P.classname)^"()" in
-    (* let js_code = String.concat "\\\n" (String.split_on_char '\n' js_code) in *)
     js_eval js_code
 
   let reset () =
